@@ -36,7 +36,9 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy family-action
 ```
 
-`supabase/config.toml`의 `verify_jwt = true`는 유지합니다. 함수 내부에서도 Auth `/user`로 사용자 토큰을 검증하고 가족 역할을 DB에서 다시 읽습니다. 클라이언트가 보낸 역할을 신뢰하지 않습니다.
+`supabase/config.toml`은 기본으로 `verify_jwt = true`입니다. 함수 내부에서도 Auth `/user`로 사용자 토큰을 검증하고 가족 역할을 DB에서 다시 읽습니다. 클라이언트가 보낸 역할을 신뢰하지 않습니다.
+
+**서명 키 호환성 확인:** Supabase의 Edge 인증 안내와 서명 키 전환 안내는 플랫폼 JWT 검사에 관한 조건이 다릅니다. 비대칭 서명 키 프로젝트에서 플랫폼 검사 때문에 정상 사용자 요청이 401로 거절되면 공식 서명 키 안내를 확인하세요. 플랫폼 검사를 끄는 구성을 선택하더라도 이 함수의 Bearer 검사와 Auth `/user` 검증은 절대 제거하지 않으며, 로그인하지 않은 요청이 401이고 정상 사용자만 접근하는지 다시 검사해야 합니다. 이 프로젝트에서는 실제 Supabase 서명 키 환경의 동작을 아직 검증하지 않았습니다.
 
 v0.2 함수는 `SUPABASE_URL`과 신형 JSON 맵 `SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS`의 `default` 키를 우선 사용합니다. 단일 변수 `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, 레거시 `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`도 차례로 지원합니다. 신형 secret 키는 JWT가 아니므로 DB 요청의 apikey에만 넣습니다. 설정 누락 시 서버를 조용히 실행하지 않고 오류를 냅니다. 이 값들은 Edge 환경에만 있어야 합니다.
 
@@ -52,12 +54,11 @@ APP_ORIGIN에 마지막 `/`를 붙이지 않습니다. 출처 제한은 추가 �
 
 ## 4. 웹앱 공개 설정
 
-로컬에서 `.env.example`을 `.env.local`로 복사합니다. 값 두 개만 넣습니다.
+로컬에서 `.env.example`을 `.env.local`로 복사합니다. 공개 URL과 공개 키를 넣습니다. `REQUIRE_CLOUD_CONFIG`는 `.env.local`이 아니라 빌드 프로세스의 환경 변수로 지정합니다.
 
 ```dotenv
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_OR_ANON_PUBLIC_KEY
-REQUIRE_CLOUD_CONFIG=1
 ```
 
 권장 이름은 `SUPABASE_PUBLISHABLE_KEY`이며 기존 `SUPABASE_ANON_KEY`도 호환됩니다. **`sb_secret_…` 키나 service_role JWT를 넣으면 안 됩니다.** 빌드와 실행 시에도 이를 검사합니다.
@@ -65,6 +66,7 @@ REQUIRE_CLOUD_CONFIG=1
 ```powershell
 npm ci
 npm run check:deploy
+$env:REQUIRE_CLOUD_CONFIG="1"
 npm run typecheck
 npm test
 npm run build
@@ -134,6 +136,8 @@ DB 자체 백업/복구는 Supabase의 해당 플랜 기능과 별도 덤프 절
 - Edge 환경 변수: `https://supabase.com/docs/guides/functions/secrets`
 - Edge 인증 헤더/JWT: `https://supabase.com/docs/guides/functions/auth-headers`
 - Auth JWT 검증: `https://supabase.com/docs/guides/auth/jwts`
+- Edge 인증 방식: `https://supabase.com/docs/guides/functions/auth`
+- 서명 키 전환: `https://supabase.com/docs/guides/auth/signing-keys`
 - Anonymous sign-ins: `https://supabase.com/docs/guides/auth/auth-anonymous`
 - RLS: `https://supabase.com/docs/guides/database/postgres/row-level-security`
 - Vercel 프로젝트 설정: `https://vercel.com/docs/project-configuration`

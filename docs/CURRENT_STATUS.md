@@ -7,7 +7,7 @@
 | 칭찬/확정 교환/뽑기/보상·쿠폰 관리 | 구현, 자동 검사 및 화면 시나리오 통과 |
 | 공개 설정 검사 / 신형·레거시 서버 키 지원 | 구현, 회귀 검사 추가 |
 | 로그인/아이 연결/초대/권한/15초 갱신 | 코드 작성, 실제 Supabase 연결 전 |
-| SQL RLS/초대/중복 commit/동시 revision | PostgreSQL 통합 테스트 작성, GitHub 실행 결과 참조 |
+| SQL RLS/초대/중복 commit/동시 revision | PostgreSQL 16 통합 테스트 15개 시나리오 그룹 통과 |
 | GitHub 자동 검사 | .github/workflows/ci.yml |
 | GitHub Pages 배포 | 선택 실행형 .github/workflows/pages.yml, Pages 설정 필요 |
 | Vercel 배포 설정 | vercel.json 준비 |
@@ -19,7 +19,7 @@ Supabase 서버 키 JSON 맵(`SUPABASE_PUBLISHABLE_KEYS`, `SUPABASE_SECRET_KEYS`
 
 배포 전 `npm run check:deploy`, 빌드 시 `REQUIRE_CLOUD_CONFIG=1`로 누락·예시 값·서버 키 혼입을 검사합니다. 이 검사는 실제 서버 통신 검사가 아닙니다.
 
-단위/서비스/보안/설정 **83개**, Chromium 화면 시나리오 **13개**를 작업 환경에서 재실행해 통과했습니다. DB·GitHub 실행 여부는 테스트 보고서 및 Actions의 실제 결과를 확인하세요.
+단위/서비스/보안/설정 **83개**, Chromium 화면 시나리오 **13개**를 작업 환경에서 재실행해 통과했습니다. GitHub Actions에서도 npm ci부터 재실행해 통과했으며, 실제 PostgreSQL 16에서 DB 시나리오 15개 그룹이 통과했습니다. [확인한 실행](https://github.com/herothgf-cell/Good/actions/runs/40338145636). 실제 Supabase Auth/Edge 연결과는 별개입니다.
 
 ## 다음 단계
 

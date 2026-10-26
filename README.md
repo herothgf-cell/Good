@@ -48,10 +48,9 @@ npm run build
 ```dotenv
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_KEY
-REQUIRE_CLOUD_CONFIG=1
 ```
 
-`SUPABASE_ANON_KEY`도 호환됩니다. `check:deploy`는 **설정 형식 검사**이며 실제 서버 접근 성공을 보증하지 않습니다. 공유 모드 배포에 `REQUIRE_CLOUD_CONFIG=1`을 사용하면 설정 누락으로 체험판이 잘못 게시되는 것을 막습니다.
+`SUPABASE_ANON_KEY`도 호환됩니다. `check:deploy`는 **설정 형식 검사**이며 실제 서버 접근 성공을 보증하지 않습니다. 공유 모드 배포의 프로세스 환경 변수에 `REQUIRE_CLOUD_CONFIG=1`을 설정하면 (`.env.local`에 적는 것만으로는 적용되지 않음) 설정 누락으로 체험판이 잘못 게시되는 것을 막습니다.
 
 ## GitHub에서 검사 / Pages 배포
 
@@ -61,6 +60,10 @@ REQUIRE_CLOUD_CONFIG=1
 - Pages를 켠 경우 예상 주소는 `https://herothgf-cell.github.io/Good/`입니다. **실제 배포 성공 전에는 접속 가능한 주소라고 간주하지 마세요.**
 
 Vercel은 `vercel.json`의 Other / `npm run build` / `dist` 설정을 사용합니다. 서비스 가입·연결·Pages 설정은 별도 단계입니다.
+
+## 확인한 검증 결과
+
+2026-10-26 [GitHub 실제 실행](https://github.com/herothgf-cell/Good/actions/runs/40338145636)에서 `npm ci`, 타입 검사, **83개 자동 검사·13개 브라우저 시나리오·15개 PostgreSQL 시나리오 그룹**이 통과했습니다. DB는 테스트 Auth 스키마를 사용하며 실제 Supabase 서비스 연결 검증과는 다릅니다. 이후 변경은 Actions의 최신 결과를 확인하세요.
 
 ## 문서
 
