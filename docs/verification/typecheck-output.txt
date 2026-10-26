@@ -1,0 +1,4 @@
+
+> praise-star@0.1.0 typecheck
+> tsc --noEmit && tsc -p tsconfig.edge.json
+

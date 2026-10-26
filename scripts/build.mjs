@@ -1,0 +1,22 @@
+import {loadPublicConfig} from './env.mjs';
+import {checkDeployment} from './deployment.mjs';
+import {execFileSync} from 'node:child_process';
+import {readFileSync,writeFileSync,cpSync,mkdirSync,readdirSync,rmSync,existsSync} from 'node:fs';
+import path from 'node:path';
+const config=loadPublicConfig(process.env,existsSync('.env.local')?readFileSync('.env.local','utf8'):'');
+const mode=checkDeployment(config,{requireCloud:process.env.REQUIRE_CLOUD_CONFIG==='1'});
+console.log(`Building ${mode} mode.`);
+rmSync('dist',{recursive:true,force:true});
+execFileSync(process.platform==='win32'?'tsc.cmd':'tsc',['-p','tsconfig.json'],{stdio:'inherit',shell:process.platform==='win32'});
+cpSync('public','dist',{recursive:true});
+cpSync('src/styles.css','dist/styles.css');
+writeFileSync('dist/config.js',`window.PRAISE_CONFIG = ${JSON.stringify(config)};\n`);
+execFileSync(process.platform==='win32'?'tsc.cmd':'tsc',['-p','tsconfig.json','--module','CommonJS','--moduleResolution','Node','--outDir','.bundle'],{stdio:'inherit',shell:process.platform==='win32'});
+const modules=[];
+function walk(dir){for(const entry of readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,entry.name);if(entry.isDirectory())walk(p);else if(p.endsWith('.js')){const id=path.relative('.bundle',p).split(path.sep).join('/');modules.push(`${JSON.stringify(id)}:function(module,exports,require){\n${readFileSync(p,'utf8')}\n}`);}}}
+walk('.bundle');
+const js=`(()=>{const modules={${modules.join(',\n')}};const cache={};function load(id){if(cache[id])return cache[id].exports;if(!modules[id])throw Error('Missing module '+id);const module={exports:{}};cache[id]=module;modules[id](module,module.exports,(req)=>{const parts=(id.slice(0,id.lastIndexOf('/')+1)+req).split('/');const resolved=[];for(const part of parts){if(part==='..')resolved.pop();else if(part!=='.'&&part!=='')resolved.push(part);}return load(resolved.join('/'));});return module.exports;}load('src/main.js');})();`;
+const html=`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#7550c8"><title>연준이의 칭찬 별나라 · 체험판</title><style>${readFileSync('src/styles.css','utf8')}</style></head><body><div id="app"></div><dialog id="modal"></dialog><div id="toast" role="status" aria-live="polite"></div><script>window.PRAISE_STANDALONE=true;window.PRAISE_CONFIG={supabaseUrl:'',supabaseAnonKey:''};${js.replaceAll('</script','<\\/script')}</script></body></html>`;
+writeFileSync('preview.html',html);
+rmSync('.bundle',{recursive:true,force:true});
+console.log('Built dist/ and standalone preview.html (no external runtime dependencies).');

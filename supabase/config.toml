@@ -1,0 +1,6 @@
+project_id = "praise-star"
+
+[functions.family-action]
+# Keep the platform JWT gate enabled. index.ts additionally verifies the user
+# through Auth /user and loads the role from family_members on every command.
+verify_jwt = true

@@ -1,0 +1,16 @@
+node_modules/
+.next/
+out/
+test-results/
+playwright-report/
+.env*
+!.env.example
+.superpowers/
+artifacts/
+.bundle/
+dist/
+preview.html
+__pycache__/
+*.pyc
+.worktrees/
+.env.backup*

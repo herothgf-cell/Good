@@ -1,0 +1,14 @@
+PASS: initial home, 23 sample stars, demo notice
+PASS: fixed purchase confirms before debit, delivers persistent coupon
+PASS: parent praise form, live preview, actor attribution and two-star credit
+PASS: coupon request → parent approval → actual-use confirmation
+PASS: reward create/edit, finite stock, user text safely escaped
+PASS: invalid gacha total rejected, edited probabilities and daily cap saved
+PASS: two no-loss draws, server-style persisted outcomes, daily cap disables further draw
+PASS: new app instance restores saved state from storage fixture
+PASS: 390px child screens have no horizontal overflow
+PASS: 390px parent menus, forms and history have no horizontal overflow
+PASS: dialog Escape and focus restoration
+PASS: 360px narrow child screens have no horizontal overflow
+PASS: no uncaught JavaScript errors during all UI flows
+UI scenarios: 13 passed

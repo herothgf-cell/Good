@@ -1,0 +1,25 @@
+{
+  "name": "연준이의 칭찬 별나라",
+  "short_name": "칭찬 별나라",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fcfaf6",
+  "theme_color": "#7550c8",
+  "description": "우리 가족의 칭찬을 모아 선물로 바꾸는 작은 별나라",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
