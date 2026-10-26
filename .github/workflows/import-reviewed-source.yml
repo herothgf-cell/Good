@@ -1,0 +1,72 @@
+name: Import reviewed Praise Star source
+on:
+  push:
+    branches: [main]
+    paths: ['.bootstrap/ready.json']
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: praise_star_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify and unpack reviewed source
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          import hashlib, io, json, tarfile
+          directory=Path('.bootstrap')
+          manifest=json.loads((directory/'ready.json').read_text())
+          data=b''.join((directory/name).read_bytes() for name in manifest['parts'])
+          assert hashlib.sha256(data).hexdigest()==manifest['sha256'], 'Source checksum mismatch'
+          with tarfile.open(fileobj=io.BytesIO(data),mode='r:xz') as archive:
+              for member in archive.getmembers():
+                  p=PurePosixPath(member.name)
+                  assert member.isfile() and not p.is_absolute() and '..' not in p.parts
+                  assert p.parts[0] not in ('.git','.github','.bootstrap','node_modules','dist','artifacts')
+                  assert not p.name.startswith('.env') or p.name=='.env.example'
+              archive.extractall('.',filter='data')
+          PY
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm run typecheck && npm test
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install playwright==1.58.0
+      - run: python -m playwright install --with-deps chromium
+      - run: npm run test:browser
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: python tests/db_test.py
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/praise_star_test
+          ALLOW_TEST_DATABASE: '1'
+      - name: Commit tested application source
+        run: |
+          rm -rf .bootstrap
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'feat: import verified Praise Star v0.2 family rewards app'
+          git push origin HEAD:main
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-import-verification
+          path: |
+            artifacts/
+            preview.html
+            dist/
+          retention-days: 7
