@@ -3,10 +3,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'cloud requires Supabase public repository variables; demo stores data only in each browser'
+        description: 'cloud connects good-praise; demo stores data only in each browser'
         type: choice
-        options: [demo, cloud]
-        default: demo
+        options: [cloud, demo]
+        default: cloud
         required: true
 permissions:
   contents: read
@@ -28,8 +28,8 @@ jobs:
       - name: Build selected deployment mode
         run: npm run build
         env:
-          SUPABASE_URL: ${{ inputs.mode == 'cloud' && vars.SUPABASE_URL || '' }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ inputs.mode == 'cloud' && vars.SUPABASE_PUBLISHABLE_KEY || '' }}
+          SUPABASE_URL: ${{ inputs.mode == 'cloud' && (vars.SUPABASE_URL || 'https://oqygpsltwyvwdfiyhzdw.supabase.co') || '' }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ inputs.mode == 'cloud' && (vars.SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_ANON_KEY || 'sb_publishable_r1pTte6b-Sa4xdURkcz_zg_HafV6yLz') || '' }}
           SUPABASE_ANON_KEY: ${{ inputs.mode == 'cloud' && vars.SUPABASE_ANON_KEY || '' }}
           REQUIRE_CLOUD_CONFIG: ${{ inputs.mode == 'cloud' && '1' || '0' }}
       - uses: actions/upload-pages-artifact@v4

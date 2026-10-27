@@ -1,0 +1,22 @@
+name: Verify deployed Supabase connection
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cloud-check.yml'
+      - 'tests/cloud-smoke.mjs'
+      - 'supabase/deploy/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cloud-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Verify live API boundaries without creating user data
+        run: node tests/cloud-smoke.mjs
