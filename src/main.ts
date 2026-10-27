@@ -2,7 +2,7 @@ import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
 import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot,type FamilyAction} from './backend.ts';
 import {AuthClient,ApiError,validateConfig,shouldRetainPending,type Config} from './auth.ts';
 import {drawQuote,poolFor,dayKey,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
-import {renderApp,rewardForm,cloudLogin,childJoinForm,onboarding,h,roleName,icons,names,formatProbability,type Screen} from './ui.ts';
+import {renderApp,rewardForm,rewardIconPicker,cloudLogin,childJoinForm,onboarding,h,roleName,icons,names,formatProbability,type Screen} from './ui.ts';
 import {downloadText,ledgerCSV} from './export.ts';
 declare global {interface Window {PRAISE_CONFIG?:Config;PRAISE_STANDALONE?:boolean}}
 const root=document.querySelector<HTMLDivElement>('#app')!;
@@ -90,6 +90,9 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
   case 'coupon/request':case 'coupon/cancel':case 'coupon/approve':if(id)await doAction({type:action,id});break;
   case 'reject-coupon':if(id)openModal(`<div class="dialog-heading"><h2>다음에 사용할 수 있도록</h2><p>쿠폰은 사라지지 않고 다시 요청할 수 있어요.</p></div><form id="reject-form" data-id="${h(id)}"><label>아이에게 남길 안내<textarea name="note" maxlength="180" rows="3" required autofocus>이번 주말에 함께 사용해요.</textarea></label><button class="button primary full" type="submit">쿠폰을 보관함으로 돌려주기</button></form>`);break;
   case 'complete-coupon':if(id)confirm('선물을 전달했나요?','<p class="dialog-help">실제로 선물을 주거나 함께 활동을 마친 뒤 사용 완료로 표시해 주세요.</p>',{type:'coupon/use',id},'네, 사용 완료');break;
+  case 'open-icon-picker':{const form=modal.querySelector<HTMLFormElement>('#reward-form');if(!form)return;const selected=form.querySelector<HTMLInputElement>('[name="icon"]')?.value??'🎁';const layer=document.createElement('div');layer.className='reward-icon-picker';layer.innerHTML=rewardIconPicker(selected);modal.append(layer);layer.querySelector<HTMLButtonElement>('.reward-icon-choice')?.focus();break;}
+  case 'select-reward-icon':{const form=modal.querySelector<HTMLFormElement>('#reward-form');const hidden=form?.querySelector<HTMLInputElement>('[name="icon"]');if(hidden&&source.dataset.icon){hidden.value=source.dataset.icon;const symbol=form?.querySelector('.selected-reward-icon');if(symbol)symbol.textContent=source.dataset.icon;}modal.querySelector('.reward-icon-picker')?.remove();break;}
+  case 'back-to-reward-form':modal.querySelector('.reward-icon-picker')?.remove();modal.querySelector<HTMLButtonElement>('.icon-select-trigger')?.focus();break;
   case 'edit-reward':{const reward=snapshot?.state.rewards.find(r=>r.id===id);openModal(rewardForm(reward));break;}
   case 'toggle-reward':{const reward=snapshot?.state.rewards.find(r=>r.id===id);if(reward)await doAction({type:'reward/save',reward:{...reward,active:!reward.active}});break;}
   case 'reverse-praise':if(id)openModal(`<div class="dialog-heading"><h2>입력 오류만 정정해요</h2><p>벌점이나 행동에 대한 벌칙으로 사용하지 않아요. 원래 기록과 정정 사유는 남겨 둬요.</p></div><form id="reverse-form" data-id="${h(id)}"><label>정정 사유<textarea name="reason" maxlength="180" rows="3" placeholder="예: 같은 칭찬을 실수로 두 번 입력했어요" required autofocus></textarea></label><button class="button primary full" type="submit">오류 정정 기록하기</button></form>`);break;
