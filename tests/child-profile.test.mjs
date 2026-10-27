@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {renderApp,childJoinForm} from '../dist/src/ui.js';
+const admin={id:'dad',name:'아빠',role:'admin'};
+const child=(id,name)=>({id,name,role:'child'});
+const state={familyName:'우리 가족',childName:'연준이',balance:13,lifetimeEarned:13,goalRewardId:null,rewards:[],box:{title:'상자',cost:5,dailyLimit:3,version:1,items:[]},praises:[],ledger:[],inventory:[],draws:[]};
+const view=(members,me=admin)=>({snapshot:{state,me,members,familyId:'f',revision:1},screen:'family',mode:'cloud',busy:false,pending:false,syncError:'',lastSync:'',inventoryFilter:'all'});
+test('연준이 프로필 하나에 여러 기기를 표시한다',()=>{const html=renderApp(view([admin,child('pc','집 PC'),child('tab','태블릿')]));assert.match(html,/연준이 프로필/);assert.match(html,/연결된 기기 2대/);assert.match(html,/집 PC/);assert.match(html,/태블릿/);assert.match(html,/data-id="pc"/);});
+test('아이는 다른 기기를 해제하지 못한다',()=>{const html=renderApp(view([admin,child('pc','집 PC')],child('pc','집 PC')));assert.doesNotMatch(html,/data-action="remove-member"/);});
+test('기기 이름은 HTML 이스케이프된다',()=>{const html=renderApp(view([admin,child('pc','<img src=x>')]));assert.doesNotMatch(html,/<img src=x>/);assert.match(html,/&lt;img/);});
+test('연준이 연결은 이메일 없이 기기 이름을 사용한다',()=>{const html=childJoinForm();assert.match(html,/기기 이름/);assert.match(html,/기존 연준이 프로필/);assert.doesNotMatch(html,/아이 별명/);});
