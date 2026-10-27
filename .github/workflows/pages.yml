@@ -1,5 +1,9 @@
 name: Deploy family web app to Pages
 on:
+  workflow_run:
+    workflows: ["Verify Praise Star"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       mode:
@@ -15,10 +19,19 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -28,10 +41,10 @@ jobs:
       - name: Build selected deployment mode
         run: npm run build
         env:
-          SUPABASE_URL: ${{ inputs.mode == 'cloud' && (vars.SUPABASE_URL || 'https://oqygpsltwyvwdfiyhzdw.supabase.co') || '' }}
-          SUPABASE_PUBLISHABLE_KEY: ${{ inputs.mode == 'cloud' && (vars.SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_ANON_KEY || 'sb_publishable_r1pTte6b-Sa4xdURkcz_zg_HafV6yLz') || '' }}
-          SUPABASE_ANON_KEY: ${{ inputs.mode == 'cloud' && vars.SUPABASE_ANON_KEY || '' }}
-          REQUIRE_CLOUD_CONFIG: ${{ inputs.mode == 'cloud' && '1' || '0' }}
+          SUPABASE_URL: ${{ inputs.mode != 'demo' && (vars.SUPABASE_URL || 'https://oqygpsltwyvwdfiyhzdw.supabase.co') || '' }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ inputs.mode != 'demo' && (vars.SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_ANON_KEY || 'sb_publishable_r1pTte6b-Sa4xdURkcz_zg_HafV6yLz') || '' }}
+          SUPABASE_ANON_KEY: ${{ inputs.mode != 'demo' && vars.SUPABASE_ANON_KEY || '' }}
+          REQUIRE_CLOUD_CONFIG: ${{ inputs.mode != 'demo' && '1' || '0' }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist
