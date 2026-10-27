@@ -17,7 +17,7 @@ export interface State {
 }
 export type Action =
   | {type: 'stars/grant'; stars: number; reason: string}
-  | {type: 'reward/grant'; rewardId: string; version: number; reason: string}
+  | {type: 'reward/grant'; rewardId: string; version: number; reason: string; quantity?: number}
   | {type: 'praise/give'; stars: number; category: string; reason: string}
   | {type: 'praise/reverse'; id: string; reason: string}
   | {type: 'reward/save'; reward: Omit<Reward, 'version'> & {version?: number}}
@@ -108,14 +108,21 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
     }
     case 'reward/grant': {
       allow(ctx.actor,['admin']);
+      const quantity=action.quantity??1;
+      integer(quantity,1,20,'선물 지급 수량은 1~20개의 정수로 입력해 주세요.');
       const reason=text(action.reason,'지급 사유',180);
       const reward=s.rewards.find(r=>r.id===action.rewardId&&r.active);
       if(!reward)fail('NOT_FOUND','공개 중인 보상을 선택해 주세요.');
       if(action.version!==reward.version)fail('QUOTE_CHANGED','보상 설정이나 재고가 바뀌었어요. 최신 내용을 확인해 주세요.');
-      const coupon=acquire(s,reward,'gift',0,ctx);
-      coupon.grantedById=ctx.actor.id;coupon.grantedByName=ctx.actor.name;coupon.grantReason=reason;
-      s.ledger[s.ledger.length-1]!.reason=`보호자 선물: ${reward.title} · ${reason}`;
-      result={message:'별 차감 없이 선물을 지급했어요!',coupon};break;
+      if(reward.stock!==null&&reward.stock<quantity)fail('SOLD_OUT','선물 재고가 부족해요.');
+      let first:Coupon|undefined;
+      for(let i=0;i<quantity;i++){
+        const coupon=acquire(s,reward,'gift',0,ctx);
+        coupon.grantedById=ctx.actor.id;coupon.grantedByName=ctx.actor.name;coupon.grantReason=reason;
+        s.ledger[s.ledger.length-1]!.reason='보호자 선물: '+reward.title+' · '+reason;
+        first??=coupon;
+      }
+      result={message:'별 차감 없이 '+quantity+'장의 선물을 지급했어요!',coupon:quantity===1?first:undefined};break;
     }
     case 'praise/give': {
       allow(ctx.actor,['admin','giver']);
