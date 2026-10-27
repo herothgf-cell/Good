@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {rewardForm,rewardIconPicker,rewardIcons} from '../dist/src/ui.js';
+test('reward icon is a popup trigger and hidden submitted form value, not a dropdown',()=>{const html=rewardForm();assert.match(html,/data-action="open-icon-picker"/);assert.match(html,/type="hidden" name="icon"/);assert.doesNotMatch(html,/<select name="icon"/);});
+test('existing reward icon is preselected',()=>{const html=rewardForm({id:'x',title:'test',description:'',icon:'🏰',cost:5,stock:null,active:true,shop:true,gacha:true,version:1});assert.match(html,/name="icon" value="🏰"/);});
+test('popup has selectable kids cafe icons and selected state',()=>{const html=rewardIconPicker('🎠');assert.ok(rewardIcons.includes('🎠'));assert.ok(rewardIcons.includes('🏰'));assert.match(html,/data-action="select-reward-icon"/);assert.match(html,/aria-pressed="true"/);});
