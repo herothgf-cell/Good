@@ -1,6 +1,6 @@
 {
   "name": "praise-star",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "연준이의 칭찬 별나라 — 가족 공동 칭찬과 확정·랜덤 보상",
@@ -10,7 +10,7 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "dev": "npm run build && node scripts/serve.mjs",
     "preview": "node scripts/serve.mjs",
-    "test:browser": "python tests/browser_test.py",
+    "test:browser": "python tests/browser_test.py && python tests/guardian_browser_test.py",
     "check:deploy": "node scripts/deployment.mjs",
     "test:db": "python3 tests/db_test.py"
   },

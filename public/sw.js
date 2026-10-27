@@ -1,6 +1,6 @@
 /* App shell only. Never cache authentication, API responses, or family records. */
-const CACHE = 'praise-star-shell-v0.2.0';
-const ASSETS = ['./','./index.html','./styles.css','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest','./src/main.js','./src/ui.js','./src/backend.js','./src/auth.js','./src/export.js','./supabase/functions/_shared/domain.js','./supabase/functions/_shared/service.js'];
+const CACHE = 'praise-star-shell-v0.3.0';
+const ASSETS = ['./','./index.html','./styles.css','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest','./src/guardian.js','./src/main.js','./src/ui.js','./src/backend.js','./src/auth.js','./src/export.js','./supabase/functions/_shared/domain.js','./supabase/functions/_shared/service.js'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS)));
 });

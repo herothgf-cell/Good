@@ -7,15 +7,17 @@ export interface Reward {
 }
 export interface Box { title: string; cost: number; dailyLimit: number; version: number; items: { rewardId: string; weight: number }[] }
 export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean }
-export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
+export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw' | 'grant' | 'gift'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
 export type CouponStatus = 'available' | 'requested' | 'approved' | 'used';
-export interface Coupon { id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw'; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string }
+export interface Coupon { id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw' | 'gift'; grantedById?: string; grantedByName?: string; grantReason?: string; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string }
 export interface Draw { id: string; cost: number; couponId: string; rewardId: string; boxTitle: string; day: string; createdAt: string; odds: { rewardId: string; title: string; probability: number }[] }
 export interface State {
   schema: 1; familyName: string; childName: string; balance: number; lifetimeEarned: number; goalRewardId: string | null;
   rewards: Reward[]; box: Box; praises: Praise[]; ledger: Ledger[]; inventory: Coupon[]; draws: Draw[];
 }
 export type Action =
+  | {type: 'stars/grant'; stars: number; reason: string}
+  | {type: 'reward/grant'; rewardId: string; version: number; reason: string}
   | {type: 'praise/give'; stars: number; category: string; reason: string}
   | {type: 'praise/reverse'; id: string; reason: string}
   | {type: 'reward/save'; reward: Omit<Reward, 'version'> & {version?: number}}
@@ -82,7 +84,7 @@ function acquire(s: State, reward: Reward, source: Coupon['source'], cost: numbe
   if (reward.stock !== null && reward.stock < 1) fail('SOLD_OUT', '보상 재고가 없어요. 다른 선물을 골라 주세요.');
   if (s.balance < cost) fail('INSUFFICIENT_STARS', '별이 부족해요. 칭찬 별을 조금 더 모아 주세요.');
   const coupon: Coupon = {id:ctx.newId(),rewardId:reward.id,title:reward.title,description:reward.description,icon:reward.icon,source,status:'available',createdAt:ctx.now};
-  appendLedger(s,ctx,source === 'shop' ? 'purchase' : 'draw',-cost,source === 'shop' ? `${reward.title} 교환` : `${s.box.title} 뽑기`,coupon.id);
+  appendLedger(s,ctx,source === 'gift' ? 'gift' : source === 'shop' ? 'purchase' : 'draw',cost===0?0:-cost,source === 'gift' ? `${reward.title} 보호자 직접 지급` : source === 'shop' ? `${reward.title} 교환` : `${s.box.title} 뽑기`,coupon.id);
   if (reward.stock !== null) { reward.stock--; reward.version++; }
   s.inventory.push(coupon);
   return coupon;
@@ -96,6 +98,25 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
   let result: Result;
   dayKey(ctx.now);
   switch (action.type) {
+    case 'stars/grant': {
+      allow(ctx.actor,['admin']);
+      integer(action.stars,1,10000,'직접 지급할 별은 1~10,000개의 정수로 입력해 주세요.');
+      const reason=text(action.reason,'지급 사유',180);
+      appendLedger(s,ctx,'grant',action.stars,`보호자 별 지급: ${reason}`,ctx.newId());
+      s.lifetimeEarned+=action.stars;
+      result={message:`별 ${action.stars}개를 직접 지급했어요.`};break;
+    }
+    case 'reward/grant': {
+      allow(ctx.actor,['admin']);
+      const reason=text(action.reason,'지급 사유',180);
+      const reward=s.rewards.find(r=>r.id===action.rewardId&&r.active);
+      if(!reward)fail('NOT_FOUND','공개 중인 보상을 선택해 주세요.');
+      if(action.version!==reward.version)fail('QUOTE_CHANGED','보상 설정이나 재고가 바뀌었어요. 최신 내용을 확인해 주세요.');
+      const coupon=acquire(s,reward,'gift',0,ctx);
+      coupon.grantedById=ctx.actor.id;coupon.grantedByName=ctx.actor.name;coupon.grantReason=reason;
+      s.ledger[s.ledger.length-1]!.reason=`보호자 선물: ${reward.title} · ${reason}`;
+      result={message:'별 차감 없이 선물을 지급했어요!',coupon};break;
+    }
     case 'praise/give': {
       allow(ctx.actor,['admin','giver']);
       integer(action.stars,1,3,'칭찬 별은 1~3개의 정수로 골라 주세요.');

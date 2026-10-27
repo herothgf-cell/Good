@@ -1,11 +1,12 @@
-import {applyAction,demoState,type Actor,type State,type Action,type Result} from '../supabase/functions/_shared/domain.ts';
+import {applyAction,demoState,DomainError,type Actor,type State,type Action,type Result} from '../supabase/functions/_shared/domain.ts';
 import {canonical} from '../supabase/functions/_shared/service.ts';
 import {AuthClient,ApiError,type StoragePort} from './auth.ts';
 export const DEMO_KEY='praise-star.demo.v1';
 export const DEMO_MEMBERS:Actor[]=[{id:'child',name:'연준이',role:'child'},{id:'dad',name:'아빠',role:'admin'},{id:'mom',name:'엄마',role:'admin'},{id:'grandma',name:'할머니',role:'giver'}];
 export interface Snapshot {state:State;me:Actor;members:Actor[];familyId:string;revision:number}
-export interface Backend {readonly mode:'demo'|'cloud';load():Promise<Snapshot>;perform(action:Action,requestId:string):Promise<{snapshot:Snapshot;result:Result}>}
-interface Envelope {schema:1;revision:number;state:State;receipts:Record<string,{actorId:string;payload:string;result:Result}>}
+export type FamilyAction=Action|{type:'member/rename';userId:string;displayName:string;expectedName:string};
+export interface Backend {readonly mode:'demo'|'cloud';load():Promise<Snapshot>;perform(action:FamilyAction,requestId:string):Promise<{snapshot:Snapshot;result:Result}>}
+interface Envelope {schema:1;members?:Actor[];revision:number;state:State;receipts:Record<string,{actorId:string;payload:string;result:Result}>}
 let queue=Promise.resolve();
 function exclusive<T>(run:()=>T|Promise<T>):Promise<T> {
   if(typeof navigator!=='undefined'&&navigator.locks)return navigator.locks.request('praise-star-demo-write',run);
@@ -23,12 +24,24 @@ export class DemoRepository implements Backend {
     const value:Envelope={schema:1,revision:0,state:this.factory(),receipts:{}};this.write(value);return value;
   }
   private write(value:Envelope){try{this.storage.setItem(DEMO_KEY,JSON.stringify(value));}catch{throw new Error('브라우저 저장 공간에 기록하지 못했어요. 비공개 모드나 저장 공간을 확인해 주세요.');}}
-  private snapshot(data:Envelope):Snapshot{return {state:data.state,me:this.actor,members:DEMO_MEMBERS,familyId:'demo-family',revision:data.revision};}
+  private snapshot(data:Envelope):Snapshot{const members=data.members??DEMO_MEMBERS;return {state:data.state,me:members.find(m=>m.id===this.actor.id)??this.actor,members,familyId:'demo-family',revision:data.revision};}
   async load():Promise<Snapshot>{return exclusive(()=>this.snapshot(this.read()));}
-  async perform(action:Action,requestId:string):Promise<{snapshot:Snapshot;result:Result}> {
+  async perform(action:FamilyAction,requestId:string):Promise<{snapshot:Snapshot;result:Result}> {
     return exclusive(()=>{const envelope=this.read();const payload=canonical(action);const old=envelope.receipts[requestId];
       if(old){if(old.actorId!==this.actor.id||old.payload!==payload)throw new Error('같은 요청 번호로 다른 작업을 보낼 수 없어요.');return {snapshot:this.snapshot(envelope),result:old.result};}
-      const next=applyAction(envelope.state,action,{actor:this.actor,now:new Date().toISOString(),newId:()=>crypto.randomUUID(),random:()=>crypto.getRandomValues(new Uint32Array(1))[0]!/4294967296});
+      const actor=this.snapshot(envelope).me;
+      if(action.type==='member/rename'){
+        if(actor.role!=='admin')throw new DomainError('FORBIDDEN','보호자만 가족 이름을 수정할 수 있어요.');
+        if(typeof action.displayName!=='string'||!action.displayName.trim()||action.displayName.trim().length>30)throw new DomainError('INVALID_INPUT','이름을 1~30자로 입력해 주세요.');
+        const members=structuredClone(envelope.members??DEMO_MEMBERS);
+        const member=members.find(m=>m.id===action.userId);
+        if(!member)throw new DomainError('NOT_FOUND','가족 구성원을 찾지 못했어요.');
+        if(member.name!==action.expectedName)throw new DomainError('QUOTE_CHANGED','이름이 이미 바뀌었어요. 새로고침 후 다시 수정해 주세요.');
+        member.name=action.displayName.trim();envelope.members=members;envelope.revision++;
+        const result={message:'가족 이름을 수정했어요.'};envelope.receipts[requestId]={actorId:actor.id,payload,result};
+        this.write(envelope);return {snapshot:this.snapshot(envelope),result};
+      }
+      const next=applyAction(envelope.state,action,{actor,now:new Date().toISOString(),newId:()=>crypto.randomUUID(),random:()=>crypto.getRandomValues(new Uint32Array(1))[0]!/4294967296});
       envelope.state=next.state;envelope.revision++;envelope.receipts[requestId]={actorId:this.actor.id,payload,result:next.result};
       this.write(envelope);return {snapshot:this.snapshot(envelope),result:next.result};
     });
@@ -54,9 +67,13 @@ export class CloudRepository implements Backend {
     this.snapshot={state:families[0].state,revision:Number(families[0].revision),familyId,me:toActor(member),members:members.map(toActor)};
     return this.snapshot;
   }
-  async perform(action:Action,requestId:string):Promise<{snapshot:Snapshot;result:Result}> {
+  async perform(action:FamilyAction,requestId:string):Promise<{snapshot:Snapshot;result:Result}> {
     const current=this.snapshot??await this.load();
-    if(typeof navigator!=='undefined'&&!navigator.onLine)throw new ApiError('오프라인에서는 별을 사용하지 않아요. 인터넷 연결 후 다시 확인해 주세요.',0,true);
+    if(typeof navigator!=='undefined'&&navigator.onLine===false)throw new ApiError('오프라인에서는 별을 사용하지 않아요. 인터넷 연결 후 다시 확인해 주세요.',0,true);
+    if(action.type==='member/rename'){
+      const result=await this.auth.api('/rest/v1/rpc/family_rename_member',{p_user_id:action.userId,p_display_name:action.displayName,p_expected_name:action.expectedName,p_request_id:requestId});
+      return {snapshot:await this.load(),result};
+    }
     const response=await this.auth.api('/functions/v1/family-action',{familyId:current.familyId,requestId,action});
     this.snapshot={...current,state:response.state,revision:Number(response.revision)};
     return {snapshot:this.snapshot,result:response.result};

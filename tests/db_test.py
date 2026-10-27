@@ -46,7 +46,8 @@ create function auth.uid() returns uuid language sql stable as $$ select nullif(
 grant usage on schema public,auth to anon,authenticated,service_role;
 grant execute on function auth.jwt(),auth.uid() to anon,authenticated,service_role;
 """)
-sql((ROOT/'supabase/migrations/202610260001_praise_star.sql').read_text())
+for migration in sorted((ROOT/'supabase/migrations').glob('*.sql')):
+    sql(migration.read_text())
 passed('migration applies to real PostgreSQL')
 users={name:str(uuid.uuid4()) for name in ['dad','outsider','giver','child','extra','other','anon']}
 sql('insert into auth.users(id) values '+','.join('('+lit(v)+')' for v in users.values())+';')
@@ -54,6 +55,20 @@ args=['테스트 가족','아이','보호자']
 family=call('family_bootstrap',args,role='authenticated',user=users['dad'])
 assert sql('select state->>\'balance\' from families where id='+lit(family)+';')=='0'
 passed('real family starts with zero stars')
+
+rename_args=[users['dad'],'아빠 수정','보호자',str(uuid.uuid4())]
+r=json.loads(call('family_rename_member',rename_args,role='authenticated',user=users['dad']))
+assert r['displayName']=='아빠 수정'
+assert json.loads(call('family_rename_member',rename_args,role='authenticated',user=users['dad']))==r
+call('family_rename_member',[users['dad'],'경합','보호자',str(uuid.uuid4())],role='authenticated',user=users['dad'],fail='이미 바뀌었어요')
+call('family_rename_member',[users['dad'],'  ','아빠 수정',str(uuid.uuid4())],role='authenticated',user=users['dad'],fail='1~30')
+call('family_rename_member',[users['dad'],'외부변경','아빠 수정',str(uuid.uuid4())],role='authenticated',user=users['outsider'],fail='보호자')
+call('family_rename_member',[users['outsider'],'외부','다른 가족',str(uuid.uuid4())],role='authenticated',user=users['dad'],fail='구성원')
+call('family_rename_member',rename_args,role='anon',fail='permission denied')
+call('family_rename_member',[users['dad'],'익명','아빠 수정',str(uuid.uuid4())],role='authenticated',user=users['dad'],anonymous=True,fail='보호자')
+assert sql('select role from family_members where user_id='+lit(users['dad'])+';')=='admin'
+passed('member rename: same-family admin, replay, stale edit, outsider and anonymous protections')
+
 assert sql('select count(*) from families;',role='authenticated',user=users['dad'])=='1'
 assert sql('select count(*) from families;',role='authenticated',user=users['outsider'])=='0'
 assert sql('select count(*) from family_members;',role='authenticated',user=users['outsider'])=='0'

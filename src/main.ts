@@ -1,4 +1,5 @@
-import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot} from './backend.ts';
+import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
+import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot,type FamilyAction} from './backend.ts';
 import {AuthClient,ApiError,validateConfig,shouldRetainPending,type Config} from './auth.ts';
 import {drawQuote,poolFor,dayKey,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
 import {renderApp,rewardForm,cloudLogin,childJoinForm,onboarding,h,roleName,icons,names,formatProbability,type Screen} from './ui.ts';
@@ -13,8 +14,8 @@ try{configured=validateConfig(config);}catch(error){configurationError=error ins
 let mode:'demo'|'cloud'='demo';
 let backend:Backend;let auth:AuthClient|null=null;let snapshot:Snapshot|null=null;
 let screen:Screen='home';let inventoryFilter='all';let busy=false;let refreshing=false;let lastSync='';let syncError='';let toastTimer:ReturnType<typeof setTimeout>;
-let priorFocus:HTMLElement|null=null;let confirmAction:Action|null=null;
-interface Pending {mode:'demo'|'cloud';familyId:string;actorId:string;requestId:string;action:Action}
+let priorFocus:HTMLElement|null=null;let confirmAction:FamilyAction|null=null;
+interface Pending {mode:'demo'|'cloud';familyId:string;actorId:string;requestId:string;action:FamilyAction}
 let pending:Pending|null=null;let inviteCode='';let inviteRole='';let latestInvite:{code:string;expiresAt:string;role:Role}|null=null;
 const err=(error:unknown)=>error instanceof Error?error.message:'처리하지 못했어요. 다시 확인해 주세요.';
 function toast(message:string){clearTimeout(toastTimer);toastElement.textContent=message;toastElement.classList.add('show');toastTimer=setTimeout(()=>toastElement.classList.remove('show'),4300);}
@@ -26,8 +27,8 @@ function savePending(value:Pending|null){const key=pendingKey();if(!key)throw ne
 function openModal(content:string){priorFocus=document.activeElement as HTMLElement;modal.innerHTML=`<button class="dialog-close" aria-label="창 닫기" data-action="close-modal">×</button>${content}<div class="dialog-error" role="alert"></div>`;const title=modal.querySelector('h2');if(title){title.id='modal-title';modal.setAttribute('aria-labelledby','modal-title');}else{modal.setAttribute('aria-label','안내');}if(!modal.open)modal.showModal();const first=modal.querySelector<HTMLElement>('[autofocus]');if(first)setTimeout(()=>first.focus(),0);}
 function closeModal(){if(busy)return;modal.close();confirmAction=null;if(priorFocus?.isConnected)priorFocus.focus();else root.querySelector<HTMLElement>('.brand,.mobile-brand')?.focus();}
 function disableControls(disabled:boolean){document.querySelectorAll<HTMLInputElement|HTMLButtonElement|HTMLTextAreaElement|HTMLSelectElement>('#app button,#app input,#app textarea,#app select,#modal button,#modal input,#modal textarea,#modal select').forEach(el=>{if(disabled){el.dataset.originalDisabled=String(el.disabled);el.disabled=true;}else if(el.dataset.originalDisabled!==undefined){el.disabled=el.dataset.originalDisabled==='true';delete el.dataset.originalDisabled;}});}
-function confirm(title:string,detail:string,action:Action,label='확인'){confirmAction=action;openModal(`<div class="dialog-heading"><span class="eyebrow">ONE LITTLE MOMENT</span><h2>${title}</h2></div>${detail}<div class="dialog-actions"><button class="button outline" data-action="close-modal">돌아가기</button><button class="button primary" data-action="confirm-action">${label}</button></div>`);}
-async function doAction(action?:Action,retry=false){
+function confirm(title:string,detail:string,action:FamilyAction,label='확인'){confirmAction=action;openModal(`<div class="dialog-heading"><span class="eyebrow">ONE LITTLE MOMENT</span><h2>${title}</h2></div>${detail}<div class="dialog-actions"><button class="button outline" data-action="close-modal">돌아가기</button><button class="button primary" data-action="confirm-action">${label}</button></div>`);}
+async function doAction(action?:FamilyAction,retry=false){
   if(busy||!snapshot)return;
   if(pending&&!retry){toast('먼저 이전 요청의 결과를 확인해 주세요.');return;}
   const operation:Pending=retry&&pending?pending:{mode,familyId:snapshot.familyId,actorId:snapshot.me.id,requestId:crypto.randomUUID(),action:action!};
@@ -64,7 +65,7 @@ function switchLoginTab(child:boolean){const area=document.querySelector('#login
 function setupHelp(){openModal(`<div class="dialog-heading"><span class="eyebrow">FAMILY CONNECTION</span><h2>가족 공유를 연결하려면</h2><p>체험판을 가족 공유로 가장하지 않아요. 실제 서버 연결이 필요해요.</p></div><div class="dialog-help"><p>① 무료 Supabase 프로젝트에 동봉한 데이터베이스 설정과 Edge Function을 적용해요.</p><p>② 보호자 이메일 계정을 만들고 아이용 익명 인증을 켜요.</p><p>③ 공개 URL과 <strong>공개 키</strong>로 웹앱을 배포해요. 서버 비밀 키는 입력하지 않아요.</p><p>④ 보호자로 로그인해 가족을 만들고, 초대 코드를 발급해요.</p><br><p>프로젝트의 <code>docs/technical/DEPLOYMENT.md</code>에 실행 명령과 화면별 설정이 있어요.</p></div><button class="button primary full space-top" data-action="${configured?'use-cloud':'close-modal'}">${configured?'가족 공유 로그인으로 이동':'체험 계속하기'}</button>`);}
 async function adminOperation(run:()=>Promise<void>){if(busy)return;busy=true;disableControls(true);try{await run();}catch(error){if(modal.open)dialogError(err(error));else{const errorBox=document.querySelector('#auth-error');if(errorBox)errorBox.textContent=err(error);else toast(err(error));}}finally{busy=false;disableControls(false);}}
 function navigate(next:Screen){if(busy)return;if(snapshot?.me.role==='child'&&['praise','manage'].includes(next)){toast('보호자 화면이에요.');return;}if(snapshot?.me.role==='giver'&&next==='manage'){toast('보호자만 보상을 설정할 수 있어요.');return;}screen=next;closeModal();render();window.scrollTo({top:0,behavior:'instant'});}
-function openRolePicker(){openModal(`<div class="dialog-heading"><span class="eyebrow">DEMO ROLE SWITCH</span><h2>누구의 화면으로 볼까요?</h2><p>체험용 역할 전환이에요. 실제 공유 모드에서는 로그인 권한으로 구분해요.</p></div><div class="role-picker">${DEMO_MEMBERS.map(m=>`<button class="role-button" data-demo-role="${m.id}"><span>${m.role==='child'?'🌟':m.id==='grandma'?'👵':m.id==='dad'?'🧑':'👩'}</span><span><strong>${m.name}</strong><small>${roleName(m.role)}</small></span></button>`).join('')}</div>`);}
+function openRolePicker(){openModal(`<div class="dialog-heading"><span class="eyebrow">DEMO ROLE SWITCH</span><h2>누구의 화면으로 볼까요?</h2><p>체험용 역할 전환이에요. 실제 공유 모드에서는 로그인 권한으로 구분해요.</p></div><div class="role-picker">${(snapshot?.members??DEMO_MEMBERS).map(m=>`<button class="role-button" data-demo-role="${h(m.id)}"><span>${m.role==='child'?'🌟':m.id==='grandma'?'👵':m.id==='dad'?'🧑':'👩'}</span><span><strong>${h(m.name)}</strong><small>${roleName(m.role)}</small></span></button>`).join('')}</div>`);}
 function extractInvite(){try{if(location.hash.startsWith('#join=')){const q=new URLSearchParams(location.hash.slice(1));const code=q.get('join')??'';if(/^[a-f0-9]{64}$/.test(code)){inviteCode=code;inviteRole=q.get('role')??'';sessionStorage.setItem('praise-star.invite',JSON.stringify({code,role:inviteRole}));}history.replaceState(null,'',location.pathname+location.search);}else{const saved=JSON.parse(sessionStorage.getItem('praise-star.invite')??'null');if(saved){inviteCode=saved.code;inviteRole=saved.role;}}}catch{/* A private browser may not allow session persistence. */}}
 async function handleClick(event:MouseEvent){const source=(event.target as Element).closest<HTMLElement>('[data-nav],[data-action],[data-demo-role],[data-filter],[data-template]');if(!source||busy)return;
  if(source.dataset.nav){navigate(source.dataset.nav as Screen);return;}
@@ -73,6 +74,9 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
  if(source.dataset.template){const area=document.querySelector<HTMLTextAreaElement>('#praise-reason');if(area){area.value=source.dataset.template;area.dispatchEvent(new Event('input',{bubbles:true}));area.focus();}return;}
  const action=source.dataset.action,id=source.dataset.id;
  switch(action){
+  case 'grant-stars':if(snapshot?.me.role==='admin')openModal(grantStarsForm(snapshot.state.childName));break;
+  case 'grant-reward':if(snapshot?.me.role==='admin'){const r=snapshot.state.rewards.find(r=>r.id===id);if(r&&r.active&&(r.stock===null||r.stock>0))openModal(grantRewardForm(r,snapshot.state.childName));}break;
+  case 'rename-member':if(snapshot?.me.role==='admin'){const m=snapshot.members.find(m=>m.id===id);if(m)openModal(renameMemberForm(m));}break;
   case 'close-modal':closeModal();break;
   case 'switch-role':if(mode==='demo')openRolePicker();break;
   case 'account-info':if(snapshot)openModal(`<div class="dialog-heading"><h2>${h(snapshot.me.name)}의 계정</h2><p>현재 권한은 ${roleName(snapshot.me.role)}예요. 공유 기기에서는 사용 후 로그아웃해 주세요.</p></div><button class="button outline full" data-action="logout">이 기기 로그아웃</button>`);break;
@@ -114,6 +118,9 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
 document.addEventListener('click',event=>{handleClick(event).catch(error=>toast(err(error)));});
 document.addEventListener('submit',event=>{const form=event.target as HTMLFormElement;if(!(form instanceof HTMLFormElement))return;event.preventDefault();if(busy)return;const data=new FormData(form);const value=(key:string)=>String(data.get(key)??'');const number=(key:string)=>Number(value(key));
  (async()=>{switch(form.id){
+  case 'grant-stars-form':{const stars=number('stars'),reason=value('reason').trim();confirm('별을 직접 지급할까요?',`<div class="confirm-card"><h3>✦ +${h(stars)}개</h3><p>${h(reason)}</p><p>지급 후 ${(snapshot?.state.balance??0)+stars}개</p></div>`,{type:'stars/grant',stars,reason},'별 지급');break;}
+  case 'grant-reward-form':{const r=snapshot?.state.rewards.find(r=>r.id===form.dataset.id);if(!r)break;const reason=value('reason').trim();confirm('이 선물을 직접 지급할까요?',`<div class="confirm-card"><h3>${h(r.icon)} ${h(r.title)}</h3><p>쿠폰 1장 · 별 차감 없음</p><p>${h(reason)}</p></div>`,{type:'reward/grant',rewardId:r.id,version:Number(form.dataset.version),reason},'선물 지급');break;}
+  case 'rename-member-form':await doAction({type:'member/rename',userId:form.dataset.id!,expectedName:form.dataset.expectedName!,displayName:value('displayName')});break;
   case 'praise-form':{const action:Action={type:'praise/give',stars:number('stars'),category:value('category'),reason:value('reason')};const duplicate=snapshot?.state.praises.some(p=>!p.reversed&&p.actorId===snapshot?.me.id&&p.reason===action.reason.trim()&&dayKey(p.createdAt)===dayKey(new Date().toISOString()));if(duplicate)confirm('같은 칭찬을 오늘 이미 남겼어요','<p class="dialog-help">다른 행동에 대한 추가 칭찬인지 확인해 주세요. 실수라면 돌아가서 수정할 수 있어요.</p>',action,'추가 칭찬이 맞아요');else await doAction(action);break;}
   case 'reward-form':{const reward:Omit<Reward,'version'>&{version?:number}={id:form.dataset.id||crypto.randomUUID(),title:value('title'),description:value('description'),icon:value('icon'),cost:number('cost'),stock:data.has('unlimited')?null:number('stock'),active:data.has('active'),shop:data.has('shop'),gacha:data.has('gacha')};if(form.dataset.id)reward.version=Number(form.dataset.version);await doAction({type:'reward/save',reward});break;}
   case 'box-form':{const items=[...data.entries()].filter(([key,val])=>key.startsWith('weight-')&&Number(val)>0).map(([key,val])=>({rewardId:key.slice(7),weight:Number(val)}));await doAction({type:'box/save',box:{title:value('title'),cost:number('cost'),dailyLimit:number('dailyLimit'),items}});break;}
