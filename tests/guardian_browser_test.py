@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page=page_at()
     nav(page,'family');page.locator('[data-action="rename-member"][data-id="mom"]').click()
     page.locator('#rename-member-form input').fill('엄마 수정');page.locator('#rename-member-form button[type="submit"]').click()
-    expect(page.locator('#modal')).not_to_be_visible();expect(page.locator('.member-list')).to_contain_text('엄마 수정')
+    expect(page.locator('#modal')).not_to_be_visible();expect(page.locator('.member-list').last).to_contain_text('엄마 수정')
     assert next(x for x in state(page)['members'] if x['id']=='mom')['role']=='admin'
     passed('rename UI persists display name without changing role')
 
