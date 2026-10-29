@@ -6,16 +6,22 @@ export interface Reward {
   cost: number; stock: number | null; active: boolean; shop: boolean; gacha: boolean; version: number;
 }
 export interface Box { title: string; cost: number; dailyLimit: number; version: number; items: { rewardId: string; weight: number }[] }
-export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean }
-export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw' | 'grant' | 'gift'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
-export type CouponStatus = 'available' | 'requested' | 'approved' | 'used';
-export interface Coupon { id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw' | 'gift'; grantedById?: string; grantedByName?: string; grantReason?: string; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string }
+export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean; ruleId?: string }
+export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw' | 'grant' | 'gift' | 'revoke'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
+export type CouponStatus = 'available' | 'requested' | 'approved' | 'used' | 'revoked';
+export interface Coupon { id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw' | 'gift'; grantedById?: string; grantedByName?: string; grantReason?: string; stockConsumed?: boolean; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string; revokedAt?: string; revokedBy?: string; revokeReason?: string }
 export interface Draw { id: string; cost: number; couponId: string; rewardId: string; boxTitle: string; day: string; createdAt: string; odds: { rewardId: string; title: string; probability: number }[] }
+export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number}
 export interface State {
   schema: 1; familyName: string; childName: string; balance: number; lifetimeEarned: number; goalRewardId: string | null;
+  praiseRules?: PraiseRule[]; readPraiseIds?: string[];
   rewards: Reward[]; box: Box; praises: Praise[]; ledger: Ledger[]; inventory: Coupon[]; draws: Draw[];
 }
 export type Action =
+  | {type:'rule/save';rule:Omit<PraiseRule,'version'>&{version?:number}}
+  | {type:'praise/rule';ruleId:string;version:number}
+  | {type:'letters/read';ids:string[]}
+  | {type:'stars/reverse'|'coupon/revoke';id:string;reason:string}
   | {type: 'stars/grant'; stars: number; reason: string}
   | {type: 'reward/grant'; rewardId: string; version: number; reason: string; quantity?: number}
   | {type: 'praise/give'; stars: number; category: string; reason: string}
@@ -83,7 +89,7 @@ function appendLedger(s: State, ctx: Context, kind: Ledger['kind'], delta: numbe
 function acquire(s: State, reward: Reward, source: Coupon['source'], cost: number, ctx: Context): Coupon {
   if (reward.stock !== null && reward.stock < 1) fail('SOLD_OUT', '보상 재고가 없어요. 다른 선물을 골라 주세요.');
   if (s.balance < cost) fail('INSUFFICIENT_STARS', '별이 부족해요. 칭찬 별을 조금 더 모아 주세요.');
-  const coupon: Coupon = {id:ctx.newId(),rewardId:reward.id,title:reward.title,description:reward.description,icon:reward.icon,source,status:'available',createdAt:ctx.now};
+  const coupon: Coupon = {id:ctx.newId(),rewardId:reward.id,title:reward.title,description:reward.description,icon:reward.icon,source,stockConsumed:reward.stock!==null,status:'available',createdAt:ctx.now};
   appendLedger(s,ctx,source === 'gift' ? 'gift' : source === 'shop' ? 'purchase' : 'draw',cost===0?0:-cost,source === 'gift' ? `${reward.title} 보호자 직접 지급` : source === 'shop' ? `${reward.title} 교환` : `${s.box.title} 뽑기`,coupon.id);
   if (reward.stock !== null) { reward.stock--; reward.version++; }
   s.inventory.push(coupon);
@@ -98,6 +104,64 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
   let result: Result;
   dayKey(ctx.now);
   switch (action.type) {
+    case 'rule/save': {
+      allow(ctx.actor,['admin']);
+      if(!action.rule||typeof action.rule!=='object')fail('INVALID_INPUT','칭찬 행동을 확인해 주세요.');
+      const incoming=action.rule;
+      const rules=structuredClone(rulesFor(s));
+      const id=text(incoming.id,'행동 ID',80);
+      const index=rules.findIndex(r=>r.id===id);
+      if(index<0&&rules.length>=30)fail('LIMIT','칭찬 행동은 최대 30개까지 등록해 주세요.');
+      if(index>=0&&incoming.version!==rules[index]!.version)fail('QUOTE_CHANGED','행동 설정이 바뀌었어요. 다시 열어 주세요.');
+      integer(incoming.stars,1,3,'칭찬 별은 1~3개의 정수로 정해 주세요.');
+      integer(incoming.dailyLimit,1,10,'하루 횟수는 1~10회의 정수로 정해 주세요.');
+      if(typeof incoming.active!=='boolean'||typeof incoming.featured!=='boolean')fail('INVALID_INPUT','공개 설정을 확인해 주세요.');
+      const rule: PraiseRule={id,title:text(incoming.title,'행동 이름',60),description:text(incoming.description,'행동 설명',180,true),icon:text(incoming.icon,'아이콘',12),stars:incoming.stars,dailyLimit:incoming.dailyLimit,active:incoming.active,featured:incoming.featured,version:index<0?1:rules[index]!.version+1};
+      if(index<0)rules.push(rule);else rules[index]=rule;
+      s.praiseRules=rules;result={message:'별 받는 행동을 저장했어요.'};break;
+    }
+    case 'praise/rule': {
+      allow(ctx.actor,['admin','giver']);
+      const rule=rulesFor(s).find(r=>r.id===action.ruleId&&r.active);
+      if(!rule)fail('NOT_FOUND','현재 사용할 수 없는 칭찬 행동이에요.');
+      if(rule.version!==action.version)fail('QUOTE_CHANGED','행동 설정이 바뀌었어요. 다시 확인해 주세요.');
+      if(ruleGivesToday(s,rule.id,ctx.now)>=rule.dailyLimit)fail('DAILY_LIMIT','이 행동은 오늘 정한 만큼 칭찬했어요. 다른 노력을 칭찬해 주세요.');
+      const praise:Praise={id:ctx.newId(),actorId:ctx.actor.id,actorName:ctx.actor.name,stars:rule.stars,category:'우리 약속',reason:rule.title,createdAt:ctx.now,reversed:false,ruleId:rule.id};
+      appendLedger(s,ctx,'praise',rule.stars,rule.title,praise.id);
+      s.praises.push(praise);s.lifetimeEarned+=rule.stars;
+      result={message:`칭찬 별 ${rule.stars}개와 편지를 보냈어요!`,praiseId:praise.id};break;
+    }
+    case 'letters/read': {
+      allow(ctx.actor,['child']);
+      if(!Array.isArray(action.ids)||action.ids.length<1||action.ids.length>100)fail('INVALID_INPUT','읽은 편지를 1~100개 골라 주세요.');
+      const ids=[...new Set(action.ids.map(id=>text(id,'편지 ID',80)))];
+      if(ids.some(id=>!s.praises.some(p=>p.id===id)))fail('NOT_FOUND','편지를 찾지 못했어요.');
+      s.readPraiseIds=[...new Set([...(s.readPraiseIds??[]),...ids])];
+      result={message:'편지를 읽었어요. 다른 기기에도 반영돼요.'};break;
+    }
+    case 'stars/reverse': {
+      allow(ctx.actor,['admin']);
+      const reason=text(action.reason,'정정 사유',180);
+      const grant=s.ledger.find(l=>l.id===action.id&&l.kind==='grant'&&l.delta>0);
+      if(!grant)fail('NOT_FOUND','직접 지급한 별 내역을 선택해 주세요.');
+      if(s.ledger.some(l=>l.kind==='reversal'&&l.refId===grant.id))fail('ALREADY_REVERSED','이미 정정한 지급이에요.');
+      if(s.balance<grant.delta)fail('INSUFFICIENT_STARS','이미 사용한 별은 정정으로 회수할 수 없어요.');
+      appendLedger(s,ctx,'reversal',-grant.delta,`별 지급 오류 정정: ${reason}`,grant.id);
+      s.lifetimeEarned-=grant.delta;
+      result={message:'별 지급 정정 내역을 남겼어요. 원래 기록은 보존돼요.'};break;
+    }
+    case 'coupon/revoke': {
+      allow(ctx.actor,['admin']);
+      const reason=text(action.reason,'회수 사유',180);
+      const coupon=s.inventory.find(c=>c.id===action.id);
+      if(!coupon||coupon.source!=='gift')fail('NOT_FOUND','직접 지급한 선물만 회수할 수 있어요.');
+      if(coupon.status!=='available')fail('INVALID_STATE','아직 사용 요청하지 않은 선물만 회수할 수 있어요.');
+      coupon.status='revoked';coupon.revokedAt=ctx.now;coupon.revokedBy=ctx.actor.name;coupon.revokeReason=reason;
+      const reward=s.rewards.find(r=>r.id===coupon.rewardId);
+      if(reward&&reward.stock!==null&&coupon.stockConsumed===true){if(reward.stock>=100000)fail('LIMIT','재고 한도를 확인해 주세요.');reward.stock++;reward.version++;}
+      appendLedger(s,ctx,'revoke',0,`선물 지급 취소: ${coupon.title} · ${reason}`,coupon.id);
+      result={message:'미사용 선물을 회수하고 취소 기록을 남겼어요.'};break;
+    }
     case 'stars/grant': {
       allow(ctx.actor,['admin']);
       integer(action.stars,1,10000,'직접 지급할 별은 1~10,000개의 정수로 입력해 주세요.');
@@ -174,7 +238,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       result={message:'뽑기 설정을 저장했어요.'}; break;
     }
     case 'spend/shop': {
-      allow(ctx.actor,['admin','child']);
+      allow(ctx.actor,['child']);
       const r=s.rewards.find(r=>r.id===action.rewardId);
       if(!r || !r.active || !r.shop)fail('NOT_FOUND','지금 교환할 수 없는 보상이에요.');
       if(action.version!==r.version)fail('QUOTE_CHANGED','보상 설정이 바뀌었어요. 다시 확인해 주세요.');
@@ -182,7 +246,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       result={message:`${r.title}을(를) 보관함에 넣었어요!`,coupon}; break;
     }
     case 'spend/draw': {
-      allow(ctx.actor,['admin','child']);
+      allow(ctx.actor,['child']);
       const pool=poolFor(s);
       if(!pool.length)fail('EMPTY_POOL','지금 뽑을 수 있는 보상이 없어요. 보호자에게 알려 주세요.');
       if(action.quote!==drawQuote(s))fail('QUOTE_CHANGED','보상 목록이나 확률이 바뀌었어요. 확인 후 다시 뽑아 주세요.');
@@ -199,7 +263,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
     }
     case 'coupon/request': case 'coupon/cancel': case 'coupon/approve': case 'coupon/reject': case 'coupon/use': {
       const adminAction=['coupon/approve','coupon/reject','coupon/use'].includes(action.type);
-      allow(ctx.actor,adminAction?['admin']:['admin','child']);
+      allow(ctx.actor,adminAction?['admin']:['child']);
       const c=s.inventory.find(c=>c.id===action.id);
       if(!c)fail('NOT_FOUND','보상 쿠폰을 찾지 못했어요.');
       const expected: Record<string,CouponStatus>={'coupon/request':'available','coupon/cancel':'requested','coupon/approve':'requested','coupon/reject':'requested','coupon/use':'approved'};
@@ -212,7 +276,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       break;
     }
     case 'goal/set': {
-      allow(ctx.actor,['admin','child']);
+      allow(ctx.actor,['child']);
       const r=s.rewards.find(r=>r.id===action.rewardId && r.active && r.shop);
       if(!r)fail('NOT_FOUND','목표로 정할 보상을 찾지 못했어요.');
       s.goalRewardId=r.id; result={message:'모으고 싶은 선물을 골랐어요!'};break;
@@ -250,3 +314,16 @@ export function demoState(now=new Date().toISOString()): State {
   s=applyAction(s,{type:'spend/shop',rewardId:'r-play',version:1},{actor:{id:'child',name:'연준이',role:'child'},now,newId:()=>crypto.randomUUID(),random:()=>0}).state;
   return s; // 28 earned - 5 exchanged = 23 stars.
 }
+
+/** Legacy families use these editable defaults without any balance/data migration. */
+export function defaultPraiseRules():PraiseRule[]{return [
+  ['tidy','🧸','장난감 정리하기','놀고 난 장난감을 제자리에 넣어요.'],
+  ['ready','🪥','스스로 준비하기','양치하거나 준비물을 챙겨요.'],
+  ['try','📚','끝까지 도전하기','어려워도 한 번 더 해 봐요.'],
+  ['kind','💗','따뜻하게 말하기','가족과 친구에게 친절하게 말해요.'],
+  ['share','🤝','함께 배려하기','차례를 기다리거나 함께 나눠요.'],
+  ['practice','⚽','즐겁게 연습하기','운동이나 새로운 활동에 도전해요.']
+].map(([id,icon,title,description],i)=>({id:'rule-'+id,icon:icon!,title:title!,description:description!,stars:1,dailyLimit:1,active:true,featured:i<3,version:1}));}
+export function rulesFor(s:State):PraiseRule[]{return s.praiseRules??defaultPraiseRules();}
+export function ruleGivesToday(s:State,id:string,now:string):number{return s.praises.filter(p=>!p.reversed&&p.ruleId===id&&dayKey(p.createdAt)===dayKey(now)).length;}
+export function unreadPraises(s:State):Praise[]{const read=new Set(s.readPraiseIds??[]);return s.praises.filter(p=>!p.reversed&&!read.has(p.id));}

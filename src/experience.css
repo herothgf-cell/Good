@@ -1,0 +1,138 @@
+/* v0.5: readable, role-specific mobile experience. */
+:root{--muted:#71657c;--ink:#2d2438;font-size:16px}
+body{overflow-wrap:anywhere}button,input,textarea,select{font:inherit}input,textarea,select{font-size:16px}
+label{font-size:14px}label>input,label>textarea,label>select{font-size:16px}
+.button{font-size:15px;min-height:46px;padding:11px 16px;line-height:1.45}.button.small-btn{font-size:14px;min-height:44px;padding:10px 14px}
+.text-btn{min-height:44px;font-size:14px;padding:10px 6px;color:#715293}.icon-btn{min-width:44px;min-height:44px}
+.small,small{font-size:13px;line-height:1.6}.subtle{color:#71657c;line-height:1.7}
+.experience-v05 .content{max-width:1200px}.experience-v05 .page-heading h1{font-size:27px;line-height:1.4}
+.experience-v05 .page-heading p{font-size:16px;color:#71657c}.experience-v05 .panel h2{font-size:21px}
+.experience-v05 .panel p{line-height:1.7}.experience-v05 .panel{margin-bottom:20px}
+.experience-v05 .section-top{flex-wrap:wrap}.experience-v05 .section-top .button{flex-shrink:0}
+.experience-v05 .mode-banner{font-size:13px;color:#594767}.experience-v05 .mode-banner.cloud{color:#426650}
+.experience-v05 .mode-banner button{font-size:13px;min-height:44px;padding:8px;width:auto}
+.experience-v05 .topbar{gap:10px}.experience-v05 .top-actions{gap:14px}
+.experience-v05 .user-switch{font-size:15px;min-height:44px;flex-shrink:0}.experience-v05 .user-switch>span{display:block}
+.experience-v05 .user-switch>.user-avatar{display:grid}.experience-v05 .user-switch small{font-size:12px;color:#71657c}
+.experience-v05 .user-avatar{width:40px;height:40px}.experience-v05 .breadcrumb{font-size:15px;color:#5d496f}
+.mail-bell{position:relative;min-width:44px;min-height:44px;font-size:25px;border-radius:12px;background:#f3ecfc;color:#7443a3}
+.mail-bell b,.nav-badge{position:absolute;top:0;right:0;min-width:20px;height:20px;padding:0 5px;border-radius:15px;background:#963c73;color:white;font-size:12px;display:grid;place-items:center}
+.experience-v05 .nav-item{position:relative;font-size:16px;min-height:50px}.experience-v05 .sidebar-note{font-size:14px;line-height:1.8;color:#6c587d}
+.experience-v05 .sidebar-footer,.experience-v05 .main-footer{font-size:12px;color:#6c587d}
+.experience-v05 .mobile-nav button{position:relative;min-height:48px;font-size:12px;color:#665672;gap:3px}.experience-v05 .mobile-nav button.active{color:#6839a0}
+.experience-v05 .mobile-nav .nav-badge{right:14px}.experience-v05 .mobile-nav .nav-icon{font-size:23px}
+.admin-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.admin-summary>div,.admin-summary>button{padding:22px 16px;border:1px solid #e7dff0;border-radius:20px;background:#fff;text-align:left;min-width:0}
+.admin-summary>div{background:#efe6fc}.admin-summary span{display:block;font-size:14px;color:#6a567e}
+.admin-summary strong{display:block;font-size:38px;color:#56367e;line-height:1.4;margin-top:7px}.admin-summary small{font-size:14px;margin-left:5px}
+.admin-shortcuts,.child-shortcuts,.management-switch,.settings-shortcuts{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
+.admin-shortcuts>.button{flex:1}.task-row{display:flex;gap:14px;align-items:center;padding:20px 0;border-bottom:1px solid #ede7f2}
+.task-row:last-child{border-bottom:0}.task-row strong{font-size:17px}.task-row p{font-size:14px;color:#71657c;margin-top:6px}.task-icon{font-size:30px}
+.mail-hero{padding:26px;border:1px solid #e4d7f4;border-radius:24px;background:linear-gradient(135deg,#f6efff,#fff9ee);box-shadow:0 6px 24px #5d3b7710;margin-bottom:18px}
+.mail-hero.has-new{border:2px solid #bd9bdc}.mail-hero h1{font-size:28px;line-height:1.45;letter-spacing:-.7px;margin:12px 0 18px;color:#47315d}
+.mail-hero>.section-top{flex-wrap:nowrap}.mail-symbol{font-size:44px;line-height:1.15}.new-mail-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:30px;background:#8652b7;color:white;font-weight:700;font-size:14px;padding:5px 12px;white-space:nowrap}
+.mail-kicker{font-size:14px;color:#6e507e}.letter-sender{font-size:16px;font-weight:600;color:#644475}
+.letter-stars{display:inline-block;color:#795914;background:#fff0bd;border-radius:11px;font-size:16px;font-weight:750;padding:5px 10px;white-space:nowrap}
+.letter-sender .letter-stars{margin-left:6px}.letter-message{font-size:20px;font-weight:600;line-height:1.75;white-space:pre-wrap;word-break:keep-all;overflow-wrap:anywhere;color:#34283e}
+.mail-hero .letter-message{margin:18px 0 22px}.mail-hero>.text-btn{display:block;margin:8px auto -6px}.mail-hero .button{font-size:17px;min-height:50px}
+.letter-list{display:grid;gap:16px;margin-top:18px}.letter-card{text-align:left;padding:22px;background:#fcf9ff;border:1px solid #e7dcf1;border-radius:18px;min-width:0;width:100%}
+.letter-card:hover{border-color:#a582c7;background:#f6effe}.letter-card .letter-message{margin:16px 0}.letter-card small{font-size:13px;color:#71657c}
+.letter-card.reversed{opacity:.7}.letter-card.reversed .letter-message{text-decoration:line-through}.letter-detail .letter-message{font-size:22px;margin:22px 0}
+.letter-detail .letter-stars{margin-bottom:24px}.balance-summary{padding:18px 24px;display:flex;justify-content:space-between;align-items:center;background:white;border:1px solid #e6ddee;border-radius:18px;margin-bottom:20px}
+.balance-summary>span{font-size:17px;font-weight:650;color:#655174}.balance-summary>strong{font-size:34px;color:#805b17}.balance-summary small{font-size:16px;margin-left:6px}
+.promise-list,.rules-list{display:grid;gap:12px}.promise-list{margin:15px 0}.promise-card{display:flex;gap:14px;align-items:flex-start;padding:19px;border-radius:17px;background:#fff;border:1px solid #e6ddec}
+.today-promises .promise-card{background:#fcfaff}.promise-icon{font-size:30px;line-height:1.4;flex-shrink:0}.promise-card h3{font-size:18px;line-height:1.5}
+.promise-card p{font-size:15px;color:#65576f;margin:5px 0 8px}.rule-terms{display:inline-block;font-size:14px;color:#684493;font-weight:650}.muted-rule{opacity:.7}
+.compact-goal{display:flex;align-items:center;gap:16px}.compact-goal .goal-symbol{font-size:34px}.compact-goal h2{font-size:18px}.compact-goal p{font-size:14px;color:#71657c}
+.child-shortcuts>.button{flex:1}.quick-praise{margin-bottom:26px!important}.quick-praise>p{margin:12px 0}
+.quick-rule-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.quick-rule{display:flex;flex-direction:column;align-items:flex-start;gap:7px;text-align:left;border-radius:16px;border:1px solid #dfd3eb;background:#faf7ff;padding:16px;min-width:0;min-height:130px}
+.quick-rule>span{font-size:27px}.quick-rule>strong{font-size:16px;line-height:1.6}.quick-rule small{font-size:14px;color:#73558c}.quick-rule:disabled{background:#f5f3f7;color:#746d7c}
+.management-toolbar{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:14px;margin-bottom:18px}.management-toolbar label{font-size:14px}
+.reward-admin-card{background:#fff;border:1px solid #e5ddeb;border-radius:19px;padding:20px;margin-bottom:15px}.reward-admin-info{display:flex;gap:14px;align-items:flex-start}
+.reward-admin-icon{font-size:33px;min-width:40px}.reward-admin-info h2{font-size:19px;line-height:1.5}.reward-admin-info p{font-size:15px;color:#6c5c78;margin-top:5px}
+.reward-admin-info p.small{font-size:13px}.reward-admin-actions{display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:9px;margin-top:18px}.reward-admin-actions .button{font-size:14px;padding:10px 8px}
+.status-badge{font-size:12px;line-height:1.5;background:#f1ecf7;color:#6a4d80;white-space:nowrap;padding:5px 8px}
+.experience-v05 .three-fields{grid-template-columns:repeat(3,minmax(0,1fr))}.experience-v05 .three-fields label{font-size:14px}
+.experience-v05 .weight-row{font-size:16px;gap:12px}.experience-v05 .weight-row small{display:block;font-size:13px}.experience-v05 .weight-row input{font-size:16px;min-width:70px;height:46px}
+.experience-v05 .count-pill{font-size:14px;color:#665074}.experience-v05 .coupon-status-tabs{display:flex;flex-wrap:wrap;overflow:visible;gap:8px}
+.experience-v05 .coupon-status-tabs>button{font-size:14px;min-height:44px;padding:9px 12px;flex-shrink:0}.experience-v05 .coupon-status-tabs>button>span{font-size:13px}
+.coupon-group{border:1px solid #dfd3e9;border-radius:18px;overflow:hidden;background:#fff;margin-bottom:16px}
+.coupon-group>summary{display:flex;align-items:center;gap:12px;cursor:pointer;padding:20px;min-height:72px;list-style:none}.coupon-group>summary::-webkit-details-marker{display:none}
+.coupon-group>summary::after{content:'⌄';font-size:22px;color:#7a6192}.coupon-group[open]>summary::after{transform:rotate(180deg)}
+.coupon-group>summary strong{font-size:18px;line-height:1.6}.coupon-group>summary small{display:block;font-size:14px;color:#6e5e7b}.coupon-group>summary>b{font-size:18px;white-space:nowrap}
+.coupon-group .coupon-emoji{font-size:33px}.coupon-group-items{padding:0 16px 16px}.coupon-group .coupon-card{box-shadow:none;border:0;border-top:1px dashed #d9cbe6;border-radius:0;padding:20px 4px 6px}
+.coupon-group .coupon-card h3{font-size:17px}.coupon-group .coupon-card p{font-size:16px;line-height:1.7;min-height:0;margin:10px 0}.coupon-group .coupon-card small{font-size:13px;color:#71657c}
+.coupon-group .coupon-actions{gap:8px;flex-wrap:wrap;margin-top:14px}.coupon-group .coupon-actions .button{font-size:15px;min-height:46px;flex:1}
+.settings-shortcuts>.button{flex:1;min-width:180px}.experience-v05 .member-list{margin-top:12px}.experience-v05 .member-row{gap:10px;flex-wrap:wrap;padding:16px 0}
+.experience-v05 .member-row>.grow{min-width:120px}.experience-v05 .member-row strong{font-size:17px}.experience-v05 .member-row small{font-size:14px}
+.experience-v05 .member-row .button,.experience-v05 .member-row .text-btn{min-height:44px;font-size:14px}.experience-v05 .check-label{font-size:14px;min-height:44px}
+.experience-v05 .stat-grid span{font-size:13px}.experience-v05 .stat-grid strong{font-size:28px}.experience-v05 .ledger-row strong{font-size:16px}.experience-v05 .ledger-row small{font-size:13px}
+.experience-v05 .praise-row p{font-size:18px;line-height:1.75}.experience-v05 .praise-row small{font-size:13px}.experience-v05 .tiny-tag{font-size:12px}
+.experience-v05 .plus-stars{font-size:16px}.experience-v05 .empty p{font-size:16px;color:#71657c}.correction-row{display:flex;align-items:center;gap:12px;padding:18px 0;border-bottom:1px solid #e9dfef}
+.correction-row strong{font-size:16px}.correction-row p{font-size:14px;margin-top:6px}.correction-row small{font-size:13px}.correction-row .button{flex-shrink:0}
+.preview-label{padding:12px 16px;border-radius:12px;background:#fff1cd;color:#6a4c0e;font-size:15px;font-weight:700;margin-bottom:18px}
+.preview-rewards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.preview-rewards article{padding:18px;border:1px solid #e8deef;border-radius:18px}.preview-rewards article>span{font-size:40px}.preview-rewards h3{font-size:17px;margin:10px 0}.preview-rewards p{font-size:15px}
+.experience-v05 .reward-body h3{font-size:17px;line-height:1.5}.experience-v05 .reward-body>p{font-size:14px;line-height:1.7}.experience-v05 .reward-meta strong{font-size:23px}
+.experience-v05 .reward-meta>span{font-size:13px}.experience-v05 .reward-body .button{font-size:14px;min-height:46px;padding:10px 8px}.experience-v05 .goal-toggle{min-width:44px;min-height:44px}
+.experience-v05 .goal-badge{font-size:12px}.experience-v05 .gacha-stage>p,.experience-v05 .gacha-stage .small{font-size:15px;line-height:1.7}.experience-v05 .gacha-stage .draw-note{font-size:13px}
+.experience-v05 .odds-row strong{font-size:16px}.experience-v05 .odds-panel>p,.experience-v05 .tip-card p{font-size:15px}.experience-v05 .info-strip{font-size:14px;line-height:1.7}
+.experience-v05 .input-help{font-size:13px}.experience-v05 .template-row>span,.experience-v05 .template-row button{font-size:14px;min-height:44px}
+.experience-v05 .choice-chip>span{font-size:15px;min-height:44px}.experience-v05 .star-choice small{font-size:12px}.experience-v05 .form-grid{gap:20px}
+.experience-v05 .field-label{font-size:15px}.experience-v05 .praise-preview p{font-size:18px}.experience-v05 .praise-preview .eyebrow{font-size:13px}
+/* Native dialogs: keyboard focus stays in the topmost dialog; no form-cover div. */
+dialog{width:min(540px,calc(100% - 24px));max-height:90dvh;padding:28px 24px;border-radius:22px;overscroll-behavior:contain}
+.dialog-heading h2{font-size:24px}.dialog-heading p{font-size:15px;color:#71657c;line-height:1.7}.dialog-help{font-size:15px}
+.dialog-close{width:44px;height:44px;min-width:44px;min-height:44px;font-size:24px;top:8px;right:8px;z-index:2}
+dialog .dialog-heading{padding-right:25px}dialog .button{font-size:16px;min-height:46px}.dialog-error{font-size:15px}
+dialog label{font-size:15px}dialog input,dialog textarea,dialog select{font-size:16px}dialog .small{font-size:13px}
+.reward-meta-row{display:grid;grid-template-columns:1fr 1fr;align-items:end;gap:12px;margin:0 0 20px}.reward-meta-row .icon-chooser{display:flex;flex-direction:column;gap:0;min-width:0}
+.reward-meta-row .field-label{display:block;margin:0 0 7px;font-size:15px;line-height:1.5;font-weight:650}.reward-price-field{display:flex;flex-direction:column;margin:0;min-width:0;font-size:15px;line-height:1.5}
+.reward-price-field input{height:46px;min-height:46px;margin-top:7px}.icon-select-trigger{width:100%;height:46px;min-height:46px;margin:0;padding:0;display:grid;place-items:center;border:1px solid #e4deee;border-radius:12px;background:white;cursor:pointer}
+.icon-select-trigger:hover{background:#f4edfc}.selected-reward-icon{font-size:27px;line-height:1}.check-row{flex-wrap:wrap;gap:12px}.check-label{min-height:44px;font-size:14px}
+.icon-dialog{padding:18px;max-height:88dvh}.icon-picker-header{display:flex;align-items:center;justify-content:space-between;gap:16px;background:white;padding-bottom:12px}
+.icon-picker-header h2{font-size:24px}.icon-picker-header p{font-size:14px;color:#71657c;margin-top:4px}.icon-picker-header .dialog-close{position:static;flex-shrink:0}
+.icon-categories{display:flex;flex-wrap:wrap;gap:7px;margin:4px 0 16px}.icon-categories button{min-height:44px;padding:8px 12px;font-size:14px;border:1px solid #dfd4ec;border-radius:12px;background:white;color:#695178}
+.icon-categories button[aria-pressed=true]{background:#eee2fb;border-color:#ac8bc9;color:#573579;font-weight:700}.reward-icon-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.reward-icon-choice{display:grid;place-items:center;min-height:52px;padding:4px;font-size:27px;border:1px solid #e3d8ee;border-radius:12px;background:#fbf8ff}
+.reward-icon-choice:hover,.reward-icon-choice.selected{outline:2px solid #8055ae;outline-offset:1px;background:#efe2fb}
+#toast{font-size:16px;line-height:1.6;max-width:min(600px,calc(100% - 32px));padding:14px 20px;white-space:normal}
+@media(max-width:760px){
+ .experience-v05 .topbar{height:76px;padding:0 16px}.experience-v05 .mobile-brand{font-size:16px;letter-spacing:-.5px}.experience-v05 .top-actions{gap:10px}
+ .experience-v05 .user-switch>span:not(.user-avatar){display:block}.experience-v05 .user-switch>.user-avatar{display:none}.experience-v05 .user-switch{font-size:14px}
+ .experience-v05 .mode-banner{margin:10px 16px 0;padding:3px 10px;font-size:12px}.experience-v05 .content{padding:20px 16px 30px}
+ .experience-v05 .page-heading{margin-bottom:20px;gap:12px;align-items:center}.experience-v05 .page-heading h1{font-size:25px}.experience-v05 .page-heading p{font-size:15px}
+ .experience-v05 .page-heading>.button{font-size:14px;min-height:44px;padding:10px 12px;margin-top:0}.experience-v05 .page-heading:has(>.button){flex-wrap:wrap}
+ .experience-v05 .panel{padding:20px 17px;border-radius:19px}.experience-v05 .panel h2{font-size:20px}.experience-v05 .main-footer{margin-bottom:78px;padding:0 16px 24px}
+ .admin-summary{gap:9px}.admin-summary>div,.admin-summary>button{padding:16px 11px;border-radius:16px}.admin-summary span{font-size:13px}.admin-summary strong{font-size:30px}.admin-summary small{font-size:12px;margin-left:3px}
+ .admin-shortcuts{gap:8px}.admin-shortcuts .button{font-size:14px;padding:11px 8px}.task-row{flex-wrap:wrap;gap:10px}.task-row .grow{min-width:165px}.task-row>.button{margin-left:auto}
+ .mail-hero{padding:23px 20px;margin-bottom:16px}.mail-hero h1{font-size:25px;margin:10px 0 14px}.mail-symbol{font-size:38px}.new-mail-badge{font-size:13px}
+ .letter-sender{font-size:15px}.mail-hero .letter-message{font-size:20px;line-height:1.75;margin:16px 0 20px}.letter-card{padding:19px}.letter-card .letter-message{font-size:19px}
+ .letter-stars{font-size:15px}.letter-detail .letter-message{font-size:21px}.balance-summary{padding:16px 20px}.balance-summary>strong{font-size:31px}.balance-summary>span{font-size:16px}
+ .promise-card{padding:16px 13px;gap:11px}.promise-card h3{font-size:17px}.promise-card p{font-size:15px}.promise-icon{font-size:28px}.rule-terms{font-size:14px}
+ .rules-list .promise-card{flex-wrap:wrap}.rules-list .promise-card>.grow{min-width:165px}.rules-list .promise-card>.button{margin-left:auto}
+ .compact-goal{flex-wrap:wrap}.compact-goal .grow{min-width:170px}.compact-goal>.button{margin-left:auto}.compact-goal h2{font-size:18px}
+ .quick-rule-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.quick-rule{padding:14px;min-height:132px}.quick-rule strong{font-size:16px}.quick-rule small{font-size:13px}
+ .management-toolbar{grid-template-columns:minmax(0,1fr) 108px;gap:10px}.management-toolbar select{padding:12px 9px}
+ .reward-admin-card{padding:18px 16px}.reward-admin-info{gap:11px}.reward-admin-info h2{font-size:18px}.reward-admin-icon{font-size:29px;min-width:34px}.reward-admin-info p{font-size:14px}
+ .reward-admin-info .status-badge{font-size:12px;padding:5px 7px}.reward-admin-actions{gap:8px;margin-top:16px}.reward-admin-actions .button{font-size:14px;min-height:46px;padding:10px 5px}
+ .experience-v05 .three-fields{grid-template-columns:1fr}.experience-v05 .weight-row{font-size:15px;gap:9px}.experience-v05 .weight-row input{width:70px}
+ .experience-v05 .coupon-status-tabs>button{font-size:13px;padding:9px 10px}.coupon-group>summary{padding:18px 15px;gap:10px}.coupon-group>summary strong{font-size:17px}.coupon-group>summary small{font-size:13px}
+ .coupon-group-items{padding:0 14px 14px}.coupon-group .coupon-card h3{font-size:17px}.coupon-group .coupon-card p{font-size:16px}.coupon-group .coupon-card .status-badge{font-size:12px}
+ .experience-v05 .member-row>.grow{min-width:150px}.experience-v05 .member-row .button{margin-left:auto}.experience-v05 .member-row .text-btn{font-size:13px}
+ .experience-v05 .stat-grid{grid-template-columns:1fr}.experience-v05 .stat-grid>div{padding:16px 20px}.experience-v05 .ledger-row{gap:10px}.experience-v05 .ledger-row strong{font-size:15px}.experience-v05 .ledger-row small{font-size:12px}
+ .experience-v05 .praise-row{flex-wrap:wrap}.experience-v05 .praise-row .grow{min-width:165px}.experience-v05 .praise-row p{font-size:18px}.experience-v05 .praise-row small{font-size:13px}
+ .experience-v05 .reward-grid{grid-template-columns:1fr}.experience-v05 .reward-art{height:130px}.experience-v05 .reward-body{padding:19px}.experience-v05 .reward-body h3{font-size:19px}.experience-v05 .reward-body>p{font-size:15px;min-height:0}
+ .experience-v05 .reward-meta{flex-direction:row;align-items:center}.experience-v05 .reward-meta>span{font-size:14px}.experience-v05 .reward-body .button{font-size:16px;min-height:48px}
+ .experience-v05 .gacha-art{max-width:100%}.experience-v05 .gacha-stage{padding:24px 16px}.experience-v05 .gacha-stage .small{font-size:14px}.experience-v05 .odds-row strong{font-size:16px}
+ .experience-v05 .form-grid .panel{padding:21px 17px}.experience-v05 .chip-group{gap:7px}.experience-v05 .choice-chip>span{padding:10px 12px;font-size:14px}.experience-v05 .star-choice small{font-size:12px}
+ .correction-row{flex-wrap:wrap}.correction-row .grow{min-width:180px}.correction-row .button{margin-left:auto}.preview-rewards{grid-template-columns:1fr}
+ dialog{padding:26px 20px;max-height:90dvh}.dialog-heading h2{font-size:23px}.dialog-heading p{font-size:15px}.dialog-heading{margin-bottom:22px}.dialog-actions{gap:10px}
+ .icon-dialog{padding:16px}.reward-icon-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:7px}.reward-icon-choice{font-size:27px;min-height:50px}.icon-categories button{font-size:13px;padding:8px 10px}
+ .reward-meta-row .field-label,.reward-price-field{font-size:14px}.selected-reward-icon{font-size:26px}.check-row{gap:10px}.check-row .check-label{font-size:14px}
+ #toast{bottom:92px;font-size:15px}
+}
+@media(max-width:360px){.reward-icon-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.experience-v05 .mobile-brand{font-size:15px}.experience-v05 .mobile-nav button{font-size:11px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;scroll-behavior:auto!important;transition:none!important}}
+.experience-v05 .mobile-nav button>span:not(.nav-icon){font-size:12px;line-height:1.5;width:auto}
+
+#reward-form .reward-meta-row .field-label,#reward-form .reward-meta-row .reward-price-field{font-size:15px;line-height:1.5}
