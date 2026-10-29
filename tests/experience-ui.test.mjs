@@ -1,0 +1,18 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {renderApp,rewardIconPicker} from '../dist/src/ui.js';
+import {emptyState,exampleRewards,applyAction} from '../dist/supabase/functions/_shared/domain.js';
+const admin={id:'dad',name:'아빠',role:'admin'},child={id:'kid',name:'연준이',role:'child'},giver={id:'gran',name:'할머니',role:'giver'};
+let n=0;const state=()=>{let s=emptyState();s.rewards=exampleRewards();return applyAction(s,{type:'praise/give',stars:2,category:'도전',reason:'어려워도 포기하지 않고 다시 해 봤구나!'}, {actor:admin,now:'2026-10-29T02:00:00Z',newId:()=>`ui-${++n}`,random:()=>0}).state;};
+const view=(me=admin,screen='home',s=state(),extra={})=>({snapshot:{state:s,me,members:[admin,child,giver],familyId:'f',revision:1},screen,mode:'cloud',busy:false,pending:false,syncError:'',lastSync:'',inventoryFilter:'all',...extra});
+test('보호자 모바일 메뉴는 관리 업무를 앞에 둔다',()=>{const html=renderApp(view());const nav=html.split('aria-label="모바일 메뉴"')[1];for(const label of ['홈','별 주기','쿠폰','보상','설정'])assert.ok(nav.includes(label));assert.doesNotMatch(nav,/data-nav="(shop|gacha)"/);});
+test('연준이 홈 첫 영역에 새 편지와 큰 본문을 둔다',()=>{const html=renderApp(view(child));assert.match(html,/칭찬 편지가 도착했어요/);assert.match(html,/새 편지 1/);assert.ok(html.indexOf('mail-hero')<html.indexOf('balance-summary'));assert.match(html,/어려워도 포기하지 않고 다시 해 봤구나!/);assert.match(html,/data-action="open-letter"/);});
+test('보호자 홈에는 실제 구매나 뽑기 버튼 대신 승인 대기를 표시한다',()=>{const html=renderApp(view());assert.match(html,/승인 대기/);assert.match(html,/data-action="grant-stars"/);assert.doesNotMatch(html,/data-action="(buy|draw)"/);});
+test('아이의 별 받기 화면은 행동과 지급 기준을 보여주되 지급 버튼은 없다',()=>{const html=renderApp(view(child,'earn'));assert.match(html,/장난감 정리하기/);assert.match(html,/하루 1회/);assert.doesNotMatch(html,/data-action="give-rule"/);});
+test('보호자 보상 관리에서 글 검색과 상태 필터를 제공한다',()=>{const html=renderApp(view(admin,'manage'));assert.match(html,/name="rewardQuery"/);assert.match(html,/name="rewardStatus"/);assert.match(html,/data-nav="box"/);assert.match(html,/data-action="grant-reward"/);});
+test('보상 검색 필터는 실제 결과에 적용한다',()=>{const html=renderApp(view(admin,'manage',state(),{rewardQuery:'축구',rewardStatus:'all'}));assert.match(html,/아빠와 축구 놀이/);assert.doesNotMatch(html,/가족 영화 선택권/);});
+test('아이와 보호자의 실제 권한으로 메뉴 접근을 분리한다',()=>{assert.doesNotMatch(renderApp(view(child,'manage')),/data-action="edit-reward"/);assert.doesNotMatch(renderApp(view(giver,'rules')),/data-action="edit-rule"/);});
+test('관리자의 미리보기에는 실제 소비 버튼이 없다',()=>{for(const screen of ['shop','gacha'])assert.doesNotMatch(renderApp(view(admin,screen)),/data-action="(buy|draw)"/);});
+test('읽은 편지와 정정 편지는 새 편지 수에서 제외한다',()=>{const s=state();s.readPraiseIds=[s.praises[0].id];const html=renderApp(view(child,'home',s));assert.doesNotMatch(html,/새 편지 1/);assert.match(html,/칭찬 편지/);});
+test('편지의 내용과 발신자에 들어온 HTML을 실행하지 않는다',()=>{const s=state();s.praises[0].reason='<img src=x onerror=alert(1)>';s.praises[0].actorName='<b>엄마</b>';const html=renderApp(view(child,'home',s));assert.doesNotMatch(html,/<img src=x/);assert.match(html,/&lt;img/);assert.match(html,/&lt;b&gt;/);});
+test('편지함은 원본 편지를 크게 다시 열 수 있다',()=>{const html=renderApp(view(child,'letters'));assert.match(html,/칭찬 편지함/);assert.match(html,/data-action="open-letter"/);});
+test('아이콘 팝업에 종류 필터를 제공한다',()=>{const html=rewardIconPicker('🎠');assert.match(html,/data-icon-category/);assert.match(html,/키즈카페|외출/);assert.match(html,/아이콘 선택/);});
