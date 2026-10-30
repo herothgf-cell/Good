@@ -14,7 +14,7 @@ export interface Draw { id: string; cost: number; couponId: string; rewardId: st
 export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number}
 export interface State {
   schema: 1; familyName: string; childName: string; balance: number; lifetimeEarned: number; goalRewardId: string | null;
-  praiseRules?: PraiseRule[]; readPraiseIds?: string[];
+  praiseRules?: PraiseRule[]; readPraiseIds?: string[]; gachaEnabled?: boolean;
   rewards: Reward[]; box: Box; praises: Praise[]; ledger: Ledger[]; inventory: Coupon[]; draws: Draw[];
 }
 export type Action =
@@ -28,6 +28,7 @@ export type Action =
   | {type: 'praise/reverse'; id: string; reason: string}
   | {type: 'reward/save'; reward: Omit<Reward, 'version'> & {version?: number}}
   | {type: 'box/save'; box: Omit<Box, 'version'>}
+  | {type: 'gacha/set-enabled'; enabled: boolean}
   | {type: 'spend/shop'; rewardId: string; version: number}
   | {type: 'spend/draw'; quote: string}
   | {type: 'coupon/request' | 'coupon/cancel' | 'coupon/approve' | 'coupon/reject' | 'coupon/use'; id: string; note?: string}
@@ -56,6 +57,8 @@ export function dayKey(time: string): string {
   if (!Number.isFinite(ms)) fail('INVALID_TIME', '날짜를 확인해 주세요.');
   return new Date(ms + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
+/** Drawing stays hidden for legacy families until a guardian explicitly enables it. */
+export function isGachaEnabled(state: State): boolean { return state.gachaEnabled === true; }
 export function poolFor(state: State) {
   const items = state.box.items.flatMap(item => {
     const reward = state.rewards.find(r => r.id === item.rewardId);
@@ -217,6 +220,13 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       if(index<0)s.rewards.push(reward);else s.rewards[index]=reward;
       result={message:'보상 설정을 저장했어요.'}; break;
     }
+    case 'gacha/set-enabled': {
+      allow(ctx.actor,['admin']);
+      if(typeof action.enabled!=='boolean')fail('INVALID_INPUT','뽑기 공개 설정을 확인해 주세요.');
+      if(isGachaEnabled(s)!==action.enabled)s.box.version++;
+      s.gachaEnabled=action.enabled;
+      result={message:action.enabled?'아이 화면에 뽑기를 열었어요.':'아이 화면에서 뽑기를 숨겼어요.'};break;
+    }
     case 'box/save': {
       allow(ctx.actor,['admin']); const b=action.box;
       if (!b || typeof b !== 'object') fail('INVALID_INPUT','상자 설정을 확인해 주세요.');
@@ -247,6 +257,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
     }
     case 'spend/draw': {
       allow(ctx.actor,['child']);
+      if(!isGachaEnabled(s))fail('GACHA_DISABLED','지금은 뽑기가 닫혀 있어요. 보호자가 열면 이용할 수 있어요.');
       const pool=poolFor(s);
       if(!pool.length)fail('EMPTY_POOL','지금 뽑을 수 있는 보상이 없어요. 보호자에게 알려 주세요.');
       if(action.quote!==drawQuote(s))fail('QUOTE_CHANGED','보상 목록이나 확률이 바뀌었어요. 확인 후 다시 뽑아 주세요.');
@@ -291,7 +302,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
   return {state:s,result};
 }
 export function emptyState(familyName='우리 가족',childName='연준이'): State {
-  return {schema:1,familyName,childName,balance:0,lifetimeEarned:0,goalRewardId:null,rewards:[],
+  return {schema:1,familyName,childName,balance:0,lifetimeEarned:0,goalRewardId:null,gachaEnabled:false,rewards:[],
     box:{title:'반짝 선물 상자',cost:5,dailyLimit:3,version:1,items:[]},praises:[],ledger:[],inventory:[],draws:[]};
 }
 export function exampleRewards(): Reward[] {

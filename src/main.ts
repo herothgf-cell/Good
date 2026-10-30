@@ -2,7 +2,7 @@ import {canVisit,ruleEditor,letterDetail,preview} from './experience.ts';
 import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
 import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot,type FamilyAction} from './backend.ts';
 import {AuthClient,ApiError,validateConfig,shouldRetainPending,type Config} from './auth.ts';
-import {drawQuote,poolFor,dayKey,rulesFor,unreadPraises,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
+import {drawQuote,poolFor,dayKey,rulesFor,unreadPraises,isGachaEnabled,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
 import {renderApp,rewardForm,rewardIconPicker,cloudLogin,childJoinForm,onboarding,h,roleName,icons,names,formatProbability,type Screen} from './ui.ts';
 import {downloadText,ledgerCSV} from './export.ts';
 declare global {interface Window {PRAISE_CONFIG?:Config;PRAISE_STANDALONE?:boolean}}
@@ -32,7 +32,14 @@ let pending:Pending|null=null;let inviteCode='';let inviteRole='';let latestInvi
 const err=(error:unknown)=>error instanceof Error?error.message:'처리하지 못했어요. 다시 확인해 주세요.';
 function toast(message:string){clearTimeout(toastTimer);toastElement.textContent=message;toastElement.classList.add('show');toastTimer=setTimeout(()=>toastElement.classList.remove('show'),4300);}
 function dialogError(message:string){const el=modal.querySelector<HTMLDivElement>('.dialog-error');if(el)el.textContent=message;else toast(message);}
-function render(){if(!snapshot)return;root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}
+function render(){if(!snapshot)return;reconcileGachaVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}
+function reconcileGachaVisibility():boolean{
+ if(!snapshot||snapshot.me.role!=='child'||isGachaEnabled(snapshot.state))return false;
+ let changed=false;
+ if(screen==='gacha'){screen='home';changed=true;}
+ if(confirmAction?.type==='spend/draw'){closeModal(true);changed=true;}
+ return changed;
+}
 function pendingKey(){return snapshot?`praise-star.pending.${mode}.${snapshot.familyId}.${snapshot.me.id}`:'';}
 function readPending(){const key=pendingKey();const raw=key?localStorage.getItem(key):null;try{pending=raw?JSON.parse(raw):null;}catch{pending=null;}}
 function savePending(value:Pending|null){const key=pendingKey();if(!key)throw new Error('가족 정보를 먼저 확인해 주세요.');if(value)localStorage.setItem(key,JSON.stringify(value));else localStorage.removeItem(key);pending=value;}
@@ -59,7 +66,22 @@ async function doAction(action?:FamilyAction,retry=false){
   }
 }
 async function refresh(quiet=false){if(busy||refreshing)return;refreshing=true;
-  try {const fresh=await backend.load();if(!snapshot||fresh.familyId!==snapshot.familyId||fresh.revision>=snapshot.revision){const changed=!snapshot||fresh.revision!==snapshot.revision||fresh.me.role!==snapshot.me.role;const arrival=snapshot&&snapshot.me.role==='child'?unreadPraises(fresh.state).filter(p=>!snapshot!.state.praises.some(old=>old.id===p.id)).length:0;snapshot=fresh;readPending();if(arrival)toast(`💌 새 칭찬 편지 ${arrival}개가 도착했어요!`);lastSync=new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());syncError='';if(changed||!quiet){const typing=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName??'');if(!quiet||(!typing&&!modal.open))render();}}}
+  try {
+    const fresh=await backend.load();
+    if(!snapshot||fresh.familyId!==snapshot.familyId||fresh.revision>=snapshot.revision){
+      const changed=!snapshot||fresh.revision!==snapshot.revision||fresh.me.role!==snapshot.me.role;
+      const gachaChanged=snapshot?.me.role==='child'&&isGachaEnabled(snapshot.state)!==isGachaEnabled(fresh.state);
+      const arrival=snapshot&&snapshot.me.role==='child'?unreadPraises(fresh.state).filter(p=>!snapshot!.state.praises.some(old=>old.id===p.id)).length:0;
+      snapshot=fresh;readPending();
+      const closedGacha=reconcileGachaVisibility();
+      if(arrival)toast(`💌 새 칭찬 편지 ${arrival}개가 도착했어요!`);
+      lastSync=new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());syncError='';
+      if(changed||gachaChanged||closedGacha||!quiet){
+        const typing=['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName??'');
+        if(gachaChanged||closedGacha||!quiet||(!typing&&!modal.open))render();
+      }
+    }
+  }
   catch(error){syncError=mode==='cloud'?`가족 기록 갱신 실패: ${err(error)}`:err(error);if(!quiet)render();}
   finally{refreshing=false;}}
 async function initialize(){root.innerHTML='<div class="loading"><span>✦</span>우리 가족의 별을 모으고 있어요.</div>';snapshot=null;pending=null;syncError='';
@@ -76,7 +98,7 @@ async function initialize(){root.innerHTML='<div class="loading"><span>✦</span
 function switchLoginTab(child:boolean){const area=document.querySelector('#login-form-area');if(!area)return;document.querySelectorAll('.login-tabs>button').forEach((b,i)=>b.classList.toggle('active',child?i===1:i===0));area.innerHTML=child?childJoinForm(inviteCode):`<form id="login-form"><label>이메일<input type="email" name="email" autocomplete="username" required></label><label>비밀번호<input type="password" name="password" autocomplete="current-password" minlength="6" required></label><button class="button primary full" type="submit">우리 가족으로 로그인</button><p class="small subtle">성인 계정은 먼저 Supabase 대시보드에서 생성해 주세요.</p></form>`;}
 function setupHelp(){openModal(`<div class="dialog-heading"><span class="eyebrow">FAMILY CONNECTION</span><h2>가족 공유를 연결하려면</h2><p>체험판을 가족 공유로 가장하지 않아요. 실제 서버 연결이 필요해요.</p></div><div class="dialog-help"><p>① 무료 Supabase 프로젝트에 동봉한 데이터베이스 설정과 Edge Function을 적용해요.</p><p>② 보호자 이메일 계정을 만들고 아이용 익명 인증을 켜요.</p><p>③ 공개 URL과 <strong>공개 키</strong>로 웹앱을 배포해요. 서버 비밀 키는 입력하지 않아요.</p><p>④ 보호자로 로그인해 가족을 만들고, 초대 코드를 발급해요.</p><br><p>프로젝트의 <code>docs/technical/DEPLOYMENT.md</code>에 실행 명령과 화면별 설정이 있어요.</p></div><button class="button primary full space-top" data-action="${configured?'use-cloud':'close-modal'}">${configured?'가족 공유 로그인으로 이동':'체험 계속하기'}</button>`);}
 async function adminOperation(run:()=>Promise<void>){if(busy)return;busy=true;disableControls(true);try{await run();}catch(error){if(modal.open)dialogError(err(error));else{const errorBox=document.querySelector('#auth-error');if(errorBox)errorBox.textContent=err(error);else toast(err(error));}}finally{busy=false;disableControls(false);}}
-function navigate(next:Screen,filter?:string){if(busy||!snapshot)return;if(!canVisit(snapshot.me.role,next)){toast('이 화면은 보호자만 사용할 수 있어요.');return;}if(!closeModal())return;if(next==='inventory')inventoryFilter=filter??(snapshot.me.role==='admin'?'requested':'all');screen=next;render();window.scrollTo({top:0,behavior:'instant'});}
+function navigate(next:Screen,filter?:string){if(busy||!snapshot)return;if(!canVisit(snapshot.me.role,next,snapshot.state)){toast(next==='gacha'?'지금은 뽑기를 이용할 수 없어요.':'이 화면은 보호자만 사용할 수 있어요.');return;}if(!closeModal())return;if(next==='inventory')inventoryFilter=filter??(snapshot.me.role==='admin'?'requested':'all');screen=next;render();window.scrollTo({top:0,behavior:'instant'});}
 function openRolePicker(){openModal(`<div class="dialog-heading"><span class="eyebrow">DEMO ROLE SWITCH</span><h2>누구의 화면으로 볼까요?</h2><p>체험용 역할 전환이에요. 실제 공유 모드에서는 로그인 권한으로 구분해요.</p></div><div class="role-picker">${(snapshot?.members??DEMO_MEMBERS).map(m=>`<button class="role-button" data-demo-role="${h(m.id)}"><span>${m.role==='child'?'🌟':m.id==='grandma'?'👵':m.id==='dad'?'🧑':'👩'}</span><span><strong>${h(m.name)}</strong><small>${roleName(m.role)}</small></span></button>`).join('')}</div>`);}
 function extractInvite(){try{if(location.hash.startsWith('#join=')){const q=new URLSearchParams(location.hash.slice(1));const code=q.get('join')??'';if(/^[a-f0-9]{64}$/.test(code)){inviteCode=code;inviteRole=q.get('role')??'';sessionStorage.setItem('praise-star.invite',JSON.stringify({code,role:inviteRole}));}history.replaceState(null,'',location.pathname+location.search);}else{const saved=JSON.parse(sessionStorage.getItem('praise-star.invite')??'null');if(saved){inviteCode=saved.code;inviteRole=saved.role;}}}catch{/* A private browser may not allow session persistence. */}}
 async function handleClick(event:MouseEvent){const source=(event.target as Element).closest<HTMLElement>('[data-nav],[data-action],[data-demo-role],[data-filter],[data-template]');if(!source||busy)return;
@@ -91,6 +113,7 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
   case 'edit-rule':if(snapshot?.me.role==='admin')openModal(ruleEditor(rulesFor(snapshot.state).find(r=>r.id===id)));break;
   case 'give-rule':{if(!snapshot||snapshot.me.role==='child')return;const r=rulesFor(snapshot.state).find(r=>r.id===id&&r.active);if(r)confirm('이 행동을 칭찬할까요?',`<div class="confirm-card"><span class="dialog-emoji">${h(r.icon)}</span><h3>${h(r.title)}</h3><p>칭찬 편지와 별 ${r.stars}개를 보내요.</p></div>`,{type:'praise/rule',ruleId:r.id,version:r.version},'칭찬 편지 보내기');break;}
   case 'preview-child':if(snapshot?.me.role==='admin')openModal(preview(snapshot.state));break;
+  case 'toggle-gacha':if(snapshot?.me.role==='admin'){await doAction({type:'gacha/set-enabled',enabled:source.dataset.enabled==='true'});document.querySelector<HTMLElement>('[data-action="toggle-gacha"]')?.focus();}break;
   case 'simulate-draw':{if(snapshot?.me.role!=='admin')return;const pool=poolFor(snapshot.state);if(!pool.length){toast('뽑기 가능한 보상과 재고를 확인해 주세요.');break;}let ticket=crypto.getRandomValues(new Uint32Array(1))[0]!/4294967296*pool.reduce((n,i)=>n+i.weight,0);let selected=pool[pool.length-1]!.reward;for(const item of pool){if(ticket<item.weight){selected=item.reward;break;}ticket-=item.weight;}openModal(`<div class="preview-label">시험 결과 · 실제 지급 아님</div><div class="celebration"><span class="dialog-emoji">${h(selected.icon)}</span><h2>${h(selected.title)}</h2><p>별·재고·쿠폰·뽑기 횟수는 바뀌지 않았어요.</p></div><button class="button primary full" data-action="close-modal">확인</button>`);break;}
   case 'reverse-grant':case 'revoke-coupon':if(snapshot?.me.role==='admin'&&id){const title=action==='reverse-grant'?'별 지급 오류 정정':'미사용 선물 지급 취소';openModal(`<form id="correction-form" data-kind="${action==='reverse-grant'?'stars/reverse':'coupon/revoke'}" data-id="${h(id)}"><div class="dialog-heading"><h2>${title}</h2><p>원래 기록을 지우지 않고 정정 이력을 남겨요. 벌점용 회수가 아니에요.</p></div><label>정정 사유<textarea name="reason" maxlength="180" required rows="3" autofocus></textarea></label><button class="button primary full" type="submit">정정 내용 확인</button></form>`);}break;
   case 'grant-stars':if(snapshot?.me.role==='admin')openModal(grantStarsForm(snapshot.state.childName));break;
@@ -102,7 +125,7 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
   case 'more-menu':if(snapshot){const list:Screen[]=snapshot.me.role==='admin'?['praise','manage','family','history']:snapshot.me.role==='giver'?['praise','family','history']:['family','history'];openModal(`<div class="dialog-heading"><h2>함께하는 가족</h2></div><div class="role-picker">${list.map(t=>`<button class="role-button" data-nav="${t}"><span>${icons[t]}</span><strong>${names[t]}</strong></button>`).join('')}</div>${mode==='demo'?'<button class="button outline full space-top" data-action="switch-role">체험 역할 바꾸기</button>':''}`);}break;
   case 'set-goal':if(id)await doAction({type:'goal/set',rewardId:id});break;
   case 'buy':{if(snapshot?.me.role!=='child'){toast('실제 교환은 아이 화면에서만 할 수 있어요.');return;}const r=snapshot?.state.rewards.find(r=>r.id===id);if(!r||!snapshot)return;confirm('이 선물로 교환할까요?',`<div class="confirm-card"><span class="dialog-emoji">${h(r.icon)}</span><h3>${h(r.title)}</h3><p>${h(r.description)}</p><div class="confirm-amount">✦ ${snapshot.state.balance}<small>→</small>${snapshot.state.balance-r.cost}<small>개</small></div></div><p class="dialog-help">별 ${r.cost}개를 사용하고 쿠폰을 받아요. 실제 사용할 때 보호자의 승인이 필요해요.</p>`,{type:'spend/shop',rewardId:r.id,version:r.version},`별 ${r.cost}개로 교환`);break;}
-  case 'draw':{if(!snapshot||snapshot.me.role!=='child')return;const s=snapshot.state;const pool=poolFor(s);confirm('반짝 선물 상자를 열까요?',`<div class="confirm-card"><span class="dialog-emoji">🎁</span><h3>별 ${s.box.cost}개로 선물 하나</h3><p>확률을 한 번 더 확인해 주세요.</p></div><div class="odds-list">${pool.map(i=>`<div class="odds-row"><span class="odds-icon">${h(i.reward.icon)}</span><div class="grow"><strong>${h(i.reward.title)}</strong></div><b>${formatProbability(i.probability)}%</b></div>`).join('')}</div><p class="dialog-help space-top">확정 상점에서 원하는 선물을 고를 수도 있어요. 결과는 화면을 닫아도 보관함에 남아요.</p>`,{type:'spend/draw',quote:drawQuote(s)},'이 확률로 한 번 열기');break;}
+  case 'draw':{if(!snapshot||snapshot.me.role!=='child')return;if(!isGachaEnabled(snapshot.state)){render();return;}const s=snapshot.state;const pool=poolFor(s);confirm('반짝 선물 상자를 열까요?',`<div class="confirm-card"><span class="dialog-emoji">🎁</span><h3>별 ${s.box.cost}개로 선물 하나</h3><p>확률을 한 번 더 확인해 주세요.</p></div><div class="odds-list">${pool.map(i=>`<div class="odds-row"><span class="odds-icon">${h(i.reward.icon)}</span><div class="grow"><strong>${h(i.reward.title)}</strong></div><b>${formatProbability(i.probability)}%</b></div>`).join('')}</div><p class="dialog-help space-top">확정 상점에서 원하는 선물을 고를 수도 있어요. 결과는 화면을 닫아도 보관함에 남아요.</p>`,{type:'spend/draw',quote:drawQuote(s)},'이 확률로 한 번 열기');break;}
   case 'confirm-action':if(confirmAction)await doAction(confirmAction);break;
   case 'retry-pending':await doAction(undefined,true);break;
   case 'go-inventory':navigate('inventory','all');break;

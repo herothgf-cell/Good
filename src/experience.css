@@ -136,3 +136,16 @@ dialog label{font-size:15px}dialog input,dialog textarea,dialog select{font-size
 .experience-v05 .mobile-nav button>span:not(.nav-icon){font-size:12px;line-height:1.5;width:auto}
 
 #reward-form .reward-meta-row .field-label,#reward-form .reward-meta-row .reward-price-field{font-size:15px;line-height:1.5}
+
+/* Guardian control for optional child draw access. */
+.gacha-visibility{margin-bottom:24px}
+.visibility-row{display:flex;align-items:center;gap:20px;margin-bottom:12px}
+.gacha-visibility .grow p{color:var(--muted);font-size:14px;line-height:1.7;margin-top:6px}
+.visibility-switch{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:68px;min-height:56px;padding:6px;font-size:13px;font-weight:700;flex-shrink:0}
+.switch-track{display:block;width:52px;height:30px;border-radius:99px;background:#b8b0c2;padding:4px;transition:background .15s}
+.switch-track>span{display:block;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 1px 4px #29223824;transition:transform .15s}
+.visibility-switch[aria-checked="true"] .switch-track{background:var(--purple)}
+.visibility-switch[aria-checked="true"] .switch-track>span{transform:translateX(22px)}
+.visibility-switch[aria-checked="true"]{color:var(--purple-dark)}
+@media(max-width:480px){.visibility-row{gap:12px}.gacha-visibility h2{font-size:17px}}
+@media(prefers-reduced-motion:reduce){.switch-track,.switch-track>span{transition:none}}

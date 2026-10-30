@@ -21,8 +21,29 @@ with sync_playwright() as p:
         tab.locator('.user-switch').click();tab.locator(f'[data-demo-role="{who}"]').click();expect(tab.locator('#modal')).not_to_be_visible()
     def close(tab):tab.locator('#modal .dialog-close').click()
     def confirm(tab):tab.locator('#modal [data-action="confirm-action"]').click()
+    def gacha_navigation(tab,enabled):
+        count=1 if enabled else 0
+        expect(tab.locator('.mobile-nav [data-nav="gacha"]')).to_have_count(count)
+        expect(tab.locator('.sidebar nav [data-nav="gacha"]')).to_have_count(count)
+        expect(tab.locator('.mobile-nav > button')).to_have_count(5 if enabled else 4)
+    def same_records(before,after):
+        assert after=={**before,'gachaEnabled':after['gachaEnabled'],'box':{**before['box'],'version':before['box']['version']+1}}
+    def gacha_seed(seed,enabled):
+        seeded=dict(seed);envelope=json.loads(seeded['praise-star.demo.v1'])
+        envelope['state']['gachaEnabled']=enabled;envelope['state']['box']['version']+=1;envelope['revision']+=1
+        seeded['praise-star.demo.v1']=json.dumps(envelope,ensure_ascii=False);seeded['praise-star.demo-actor']='child'
+        return seeded
+    def remote_gacha(tab,enabled):
+        tab.evaluate('''enabled=>{const key='praise-star.demo.v1';const oldValue=localStorage.getItem(key);const envelope=JSON.parse(oldValue);envelope.state.gachaEnabled=enabled;envelope.state.box.version++;envelope.revision++;const newValue=JSON.stringify(envelope);localStorage.setItem(key,newValue);window.dispatchEvent(new StorageEvent('storage',{key,oldValue,newValue}));}''',enabled)
     tab=page()
     assert state(tab)['balance']==23
+    assert state(tab).get('gachaEnabled',False) is False;gacha_navigation(tab,False)
+    assert tab.locator('[data-action="draw"]').count()==0
+    passed('new child profile hides gacha in both menus and keeps four mobile tabs')
+    legacy_seed=tab.evaluate('Object.fromEntries(window.__store)');legacy_envelope=json.loads(legacy_seed['praise-star.demo.v1'])
+    legacy_envelope['state'].pop('gachaEnabled',None);legacy_seed['praise-star.demo.v1']=json.dumps(legacy_envelope,ensure_ascii=False)
+    legacy=page(seed=legacy_seed);gacha_navigation(legacy,False);assert state(legacy)==legacy_envelope['state'];legacy.context.close()
+    passed('legacy profile without a gacha setting stays hidden without rewriting records')
     expect(tab.locator('.mail-hero')).to_contain_text('칭찬 편지가 도착했어요')
     assert tab.locator('.mail-hero').bounding_box()['y']<220
     assert float(tab.locator('.mobile-nav [data-nav=home] > span').last.evaluate("e=>parseFloat(getComputedStyle(e).fontSize)"))<=14
@@ -94,21 +115,52 @@ with sync_playwright() as p:
     passed('direct star grant and audited correction retain balance invariant')
     nav(tab,'family');member=tab.locator('.member-row').filter(has_text='엄마');member.locator('[data-action=rename-member]').click();tab.locator('[name=displayName]').fill('엄마 수정');tab.locator('#rename-member-form button[type=submit]').click();expect(tab.locator('.member-list').last).to_contain_text('엄마 수정')
     passed('guardian display-name editing and child-device grouping preserved')
+    toggle=tab.locator('[data-action="toggle-gacha"]');expect(toggle).to_have_attribute('role','switch');expect(toggle).to_have_attribute('aria-checked','false');expect(toggle).to_have_attribute('data-enabled','true')
+    before=state(tab);toggle.click();expect(tab.locator('[data-action="toggle-gacha"]')).to_have_attribute('aria-checked','true');expect(tab.locator('[data-action="toggle-gacha"]')).to_have_attribute('data-enabled','false')
+    assert state(tab)['gachaEnabled'] is True;same_records(before,state(tab))
+    enabled_seed=tab.evaluate('Object.fromEntries(window.__store)');enabled_seed['praise-star.demo-actor']='child';enabled_reload=page(seed=enabled_seed)
+    gacha_navigation(enabled_reload,True);assert state(enabled_reload)==state(tab);enabled_reload.context.close()
+    passed('guardian switch enables gacha without changing records and persists on child reload')
     role(tab,'child');expect(tab.locator('.mail-hero')).to_contain_text('오늘 책 한 권 읽기');nav(tab,'gacha');tab.locator('[data-action=draw]').click();before=state(tab)['balance'];confirm(tab);assert state(tab)['balance']==before-5;close(tab)
     passed('child actual draw remains separate from parent simulation')
+    role(tab,'dad');nav(tab,'family');toggle=tab.locator('[data-action="toggle-gacha"]');expect(toggle).to_have_attribute('aria-checked','true');expect(toggle).to_have_attribute('data-enabled','false')
+    before=state(tab);toggle.click();expect(tab.locator('[data-action="toggle-gacha"]')).to_have_attribute('aria-checked','false');expect(tab.locator('[data-action="toggle-gacha"]')).to_have_attribute('data-enabled','true')
+    assert state(tab)['gachaEnabled'] is False;same_records(before,state(tab))
+    role(tab,'child');gacha_navigation(tab,False);nav(tab,'inventory');assert tab.locator('.coupon-group summary').filter(has_text='뽑기').count()>0
+    passed('guardian can hide gacha again while prior draw coupons, settings and records stay intact')
     role(tab,'grandma');assert tab.locator('[data-action=grant-stars]').count()==0;nav(tab,'praise');assert tab.locator('[data-action=edit-rule]').count()==0
     passed('praise-family role cannot access manager controls')
     # Preserve data on fresh initialization without a live network.
     seed=tab.evaluate('Object.fromEntries(window.__store)');seed['praise-star.demo-actor']='child';again=page(seed=seed)
-    assert state(again)==state(tab);passed('stored state and shared read IDs survive browser app reload')
+    assert state(again)==state(tab);gacha_navigation(again,False);again.context.close();passed('stored state, hidden gacha and shared read IDs survive browser app reload')
+    # Simulate another device changing the shared setting; these are local storage fixtures.
+    remote=page(seed=gacha_seed(seed,True));gacha_navigation(remote,True);nav(remote,'gacha');remote.locator('[data-action="draw"]').click();expect(remote.locator('#modal')).to_be_visible()
+    before=state(remote);remote_gacha(remote,False);expect(remote.locator('#modal')).not_to_be_visible();expect(remote.locator('.mail-hero')).to_be_visible();gacha_navigation(remote,False)
+    same_records(before,state(remote));assert remote.locator('[data-action="draw"]').count()==0;remote.context.close()
+    passed('remote disable closes an open draw confirmation, returns home and spends no stars')
+    letter=page(seed=gacha_seed(seed,True));letter.locator('.mail-hero [data-action="open-letter"]').click();expect(letter.locator('.letter-detail')).to_be_visible();letter_text=letter.locator('.letter-detail').inner_text()
+    before=state(letter);remote_gacha(letter,False);gacha_navigation(letter,False);expect(letter.locator('#modal')).to_be_visible();expect(letter.locator('.letter-detail')).to_have_text(letter_text,use_inner_text=True)
+    same_records(before,state(letter));close(letter);letter.context.close()
+    passed('remote disable refreshes child menus while preserving an open praise letter')
+    # A completed draw can still be reconciled after gacha is hidden, without another charge.
+    envelope=json.loads(seed['praise-star.demo.v1']);request_id,receipt=next((request_id,receipt) for request_id,receipt in envelope['receipts'].items() if json.loads(receipt['payload'])['type']=='spend/draw')
+    retry_seed=dict(seed);retry_seed['praise-star.pending.demo.demo-family.child']=json.dumps({'mode':'demo','familyId':'demo-family','actorId':'child','requestId':request_id,'action':json.loads(receipt['payload'])},ensure_ascii=False)
+    retry=page(seed=retry_seed);gacha_navigation(retry,False);before=state(retry);expect(retry.locator('.pending-banner')).to_be_visible();retry.locator('.pending-banner [data-action="retry-pending"]').click()
+    expect(retry.locator('.pending-banner')).to_have_count(0);expect(retry.locator('#modal .celebration h2')).to_have_text(receipt['result']['coupon']['title']);assert state(retry)==before;gacha_navigation(retry,False);retry.context.close()
+    passed('pending receipt retry after disable returns the existing coupon without duplicate spend or inventory')
     # Fresh responsive contexts. The test never touches actual family accounts.
     for width in [360,390,430,768,1440]:
-        for actor,screens in [('dad',['home','praise','inventory','manage','family']),('child',['home','earn','shop','gacha','inventory'])]:
+        for actor,screens in [('dad',['home','praise','inventory','manage','family']),('child',['home','earn','shop','inventory'])]:
             t=page(width,900 if width>760 else 844,actor)
+            if actor=='child':gacha_navigation(t,False)
             for screen in screens:
                 nav(t,screen)
                 assert t.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),(width,actor,screen)
-                measurements.append({'width':width,'role':actor,'screen':screen,'horizontalOverflow':False})
+                measurements.append({'width':width,'role':actor,'screen':screen,'gachaEnabled':False,'horizontalOverflow':False})
+            if actor=='child':
+                remote_gacha(t,True);gacha_navigation(t,True);nav(t,'gacha')
+                assert t.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),(width,actor,'gacha')
+                measurements.append({'width':width,'role':actor,'screen':'gacha','gachaEnabled':True,'horizontalOverflow':False})
             if actor=='dad':
                 nav(t,'manage');t.locator('[data-action=edit-reward]').first.click()
                 a=t.locator('.icon-select-trigger').bounding_box();b=t.locator('[name=cost]').bounding_box()
@@ -118,7 +170,7 @@ with sync_playwright() as p:
                 assert t.locator('#icon-modal').evaluate('e=>e.scrollWidth<=e.clientWidth+1')
                 if width==390:t.screenshot(path=str(OUT/'v05-icon-picker-390.png'))
             t.context.close()
-        passed(f'{width}px adult/child 10 screens: no horizontal overflow, matching editor heights, 44px icon targets')
+        passed(f'{width}px adult/child 10 screens: hidden/enabled gacha menus, no horizontal overflow, matching editor heights, 44px icon targets')
     # Root-font override smoke check; not full browser zoom or OS text-size certification.
     zoom=page(390,844,'child');zoom.add_style_tag(content='html{font-size:200%!important}')
     assert zoom.evaluate('document.documentElement.scrollWidth<=innerWidth+1');passed('large base text does not create horizontal page overflow')

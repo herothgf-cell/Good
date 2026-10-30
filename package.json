@@ -1,6 +1,6 @@
 {
   "name": "praise-star",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "연준이의 칭찬 별나라 — 가족 공동 칭찬과 확정·랜덤 보상",

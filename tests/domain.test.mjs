@@ -7,7 +7,7 @@ const child={id:'kid',name:'연준이',role:'child'};
 const giver={id:'gran',name:'할머니',role:'giver'};
 let seq=0;
 const context=(actor=adult, extra={})=>({actor,now:'2026-10-26T09:00:00.000Z',newId:()=>`id-${++seq}`,random:()=>0.1,...extra});
-function state(){return {schema:1,familyName:'우리 가족',childName:'연준이',balance:30,lifetimeEarned:30,goalRewardId:'r2',
+function state(){return {schema:1,familyName:'우리 가족',childName:'연준이',balance:30,lifetimeEarned:30,goalRewardId:'r2',gachaEnabled:true,
  rewards:[{id:'r1',title:'놀이 선택권',description:'함께 놀아요',icon:'🎲',cost:5,stock:2,active:true,shop:true,gacha:true,version:1},{id:'r2',title:'영화 선택권',description:'가족과 영화',icon:'🎬',cost:20,stock:null,active:true,shop:true,gacha:true,version:1}],
  box:{title:'반짝 선물 상자',cost:5,dailyLimit:3,version:1,items:[{rewardId:'r1',weight:75},{rewardId:'r2',weight:25}]},praises:[],inventory:[],draws:[],ledger:[{id:'opening',kind:'praise',delta:30,balance:30,reason:'테스트 시작 잔액',actorId:'dad',actorName:'아빠',createdAt:'2026-10-25T09:00:00.000Z',refId:'opening'}]};}
 const act=(s,a,actor=adult,extra={})=>applyAction(s,a,context(actor,extra));
