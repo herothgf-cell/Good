@@ -1,8 +1,8 @@
-// good-praise deployment entrypoint. Shared business logic is pinned to the CI-verified v0.5 commit.
+// good-praise deployment entrypoint. Shared business logic is pinned to the v0.5.1 source commit.
 // Hosted Edge environment is read-only: inject origin through configuration.
-import {loadServerConfig} from 'https://raw.githubusercontent.com/herothgf-cell/Good/edaa5f6cef04b45e28782ef2af31fd20182bb980/supabase/functions/_server/config.js';
-import {processCommand, type CommandStore, type CommitData, type Receipt, type Loaded} from 'https://raw.githubusercontent.com/herothgf-cell/Good/edaa5f6cef04b45e28782ef2af31fd20182bb980/supabase/functions/_shared/service.ts';
-import {DomainError} from 'https://raw.githubusercontent.com/herothgf-cell/Good/edaa5f6cef04b45e28782ef2af31fd20182bb980/supabase/functions/_shared/domain.ts';
+import {loadServerConfig} from 'https://raw.githubusercontent.com/herothgf-cell/Good/6aa6f6d3018787a57947460abcbe8ba46508b2b1/supabase/functions/_server/config.js';
+import {processCommand, type CommandStore, type CommitData, type Receipt, type Loaded} from 'https://raw.githubusercontent.com/herothgf-cell/Good/6aa6f6d3018787a57947460abcbe8ba46508b2b1/supabase/functions/_shared/service.ts';
+import {DomainError} from 'https://raw.githubusercontent.com/herothgf-cell/Good/6aa6f6d3018787a57947460abcbe8ba46508b2b1/supabase/functions/_shared/domain.ts';
 
 const config=loadServerConfig(name=>name==='APP_ORIGIN'?'https://herothgf-cell.github.io':Deno.env.get(name));
 const URL=config.url;
