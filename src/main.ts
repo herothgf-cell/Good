@@ -1,8 +1,9 @@
+import {timeRequestForm} from './time-coupons.ts';
 import {canVisit,ruleEditor,letterDetail,preview} from './experience.ts';
 import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
 import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot,type FamilyAction} from './backend.ts';
 import {AuthClient,ApiError,validateConfig,shouldRetainPending,type Config} from './auth.ts';
-import {drawQuote,poolFor,dayKey,rulesFor,unreadPraises,isGachaEnabled,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
+import {drawQuote,poolFor,dayKey,rulesFor,unreadPraises,isGachaEnabled,couponTime,durationFromTitle,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
 import {renderApp,rewardForm,rewardIconPicker,cloudLogin,childJoinForm,onboarding,h,roleName,icons,names,formatProbability,type Screen} from './ui.ts';
 import {downloadText,ledgerCSV} from './export.ts';
 declare global {interface Window {PRAISE_CONFIG?:Config;PRAISE_STANDALONE?:boolean}}
@@ -40,6 +41,41 @@ function reconcileGachaVisibility():boolean{
  if(confirmAction?.type==='spend/draw'){closeModal(true);changed=true;}
  return changed;
 }
+function usageVersionFrom(element:HTMLElement):{usageVersion?:number}{
+ const value=element.dataset.usageVersion;
+ return value===undefined?{}:{usageVersion:Number(value)};
+}
+function visibleCoupon(source:HTMLElement,id:string){
+ const coupon=snapshot?.state.inventory.find(item=>item.id===id);
+ if(!coupon)return null;
+ const time=couponTime(coupon);
+ if(time&&source.dataset.usageVersion!==String(time.usageVersion)){
+  render();toast('쿠폰 상태가 바뀌었어요. 남은 시간을 다시 확인해 주세요.');return null;
+ }
+ return coupon;
+}
+function updateMinuteSummary(form:HTMLFormElement){
+ const input=form.querySelector<HTMLInputElement>('[name="minutes"]');
+ const summary=form.querySelector<HTMLElement>('[data-minute-summary]');
+ if(!input||!summary)return;
+ const minutes=Number(input.value),quantity=Number(form.querySelector<HTMLInputElement>('[name="quantity"]')?.value??1);
+ if(!Number.isSafeInteger(minutes)||minutes<1||minutes>Number(input.max)||!Number.isSafeInteger(quantity)||quantity<1||quantity>20){summary.textContent='시간과 쿠폰 수량을 확인해 주세요.';return;}
+ summary.textContent=form.id==='coupon-minutes-form'?`${minutes}분 사용 완료 후 ${Number(form.dataset.remainingMinutes)-minutes}분이 남아요.`:`${minutes}분 × ${quantity}장 · 총 ${minutes*quantity}분 지급`;
+}
+function updateRewardTimeFields(form:HTMLFormElement,inferTitle=false){
+ const fields=form.querySelector<HTMLElement>('.time-reward-fields');
+ const checkbox=form.querySelector<HTMLInputElement>('[name="timeCoupon"]');
+ const input=form.querySelector<HTMLInputElement>('[name="durationMinutes"]');
+ const label=form.querySelector<HTMLElement>('.time-duration-field');
+ const hint=form.querySelector<HTMLElement>('[data-duration-hint]');
+ if(!fields||!checkbox||!input||!label)return;
+ if(inferTitle&&fields.dataset.durationManual!=='true'){
+  const duration=durationFromTitle(form.querySelector<HTMLInputElement>('[name="title"]')?.value??'');
+  checkbox.checked=duration!==null;if(duration!==null)input.value=String(duration);
+ }
+ label.hidden=!checkbox.checked;input.disabled=!checkbox.checked;
+ if(hint)hint.textContent=checkbox.checked?'필요한 시간만 나눠 지급하고 사용할 수 있어요.':'한 번 사용하면 완료되는 쿠폰이에요. 시간형으로 바꾸려면 위 항목을 켜 주세요.';
+}
 function pendingKey(){return snapshot?`praise-star.pending.${mode}.${snapshot.familyId}.${snapshot.me.id}`:'';}
 function readPending(){const key=pendingKey();const raw=key?localStorage.getItem(key):null;try{pending=raw?JSON.parse(raw):null;}catch{pending=null;}}
 function savePending(value:Pending|null){const key=pendingKey();if(!key)throw new Error('가족 정보를 먼저 확인해 주세요.');if(value)localStorage.setItem(key,JSON.stringify(value));else localStorage.removeItem(key);pending=value;}
@@ -58,7 +94,7 @@ async function doAction(action?:FamilyAction,retry=false){
     const result=await backend.perform(operation.action,operation.requestId);
     snapshot=result.snapshot;savePending(null);syncError='';lastSync=new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
     busy=false;disableControls(false);closeModal(true);render();
-    if(result.result.coupon){const coupon=result.result.coupon;openModal(`<div class="celebration"><div class="eyebrow">A GIFT FROM YOUR LITTLE STARS</div><div class="celebration-stars">✧ ✦ ✧</div><span class="dialog-emoji">${h(coupon.icon)}</span><h2>${h(coupon.title)}</h2><p>${h(coupon.description)}<br>쿠폰을 보관함에 안전하게 넣어 두었어요.</p><button class="button primary full" data-action="go-inventory">${snapshot?.me.role==='child'?'내 보관함':h(snapshot?.state.childName)+' 보관함'}으로 가기 →</button></div>`);}else toast(result.result.message);
+    if(result.result.coupon){const coupon=result.result.coupon,time=couponTime(coupon);openModal(`<div class="celebration"><div class="eyebrow">A GIFT FROM YOUR LITTLE STARS</div><div class="celebration-stars">✧ ✦ ✧</div><span class="dialog-emoji">${h(coupon.icon)}</span><h2>${h(coupon.title)}</h2><p>${h(coupon.description)}<br>${time?`받은 ${time.totalMinutes}분 · 필요한 만큼 나눠 쓸 수 있어요.<br>`:''}쿠폰을 보관함에 안전하게 넣어 두었어요.</p><button class="button primary full" data-action="go-inventory">${snapshot?.me.role==='child'?'내 보관함':h(snapshot?.state.childName)+' 보관함'}으로 가기 →</button></div>`);}else toast(result.result.message);
   } catch(error) {
     if(!shouldRetainPending(error)){try{savePending(null);}catch{/* Retain request key if the browser cannot remove it. */}}
     busy=false;disableControls(false);render();
@@ -115,10 +151,11 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
   case 'preview-child':if(snapshot?.me.role==='admin')openModal(preview(snapshot.state));break;
   case 'toggle-gacha':if(snapshot?.me.role==='admin'){await doAction({type:'gacha/set-enabled',enabled:source.dataset.enabled==='true'});document.querySelector<HTMLElement>('[data-action="toggle-gacha"]')?.focus();}break;
   case 'simulate-draw':{if(snapshot?.me.role!=='admin')return;const pool=poolFor(snapshot.state);if(!pool.length){toast('뽑기 가능한 보상과 재고를 확인해 주세요.');break;}let ticket=crypto.getRandomValues(new Uint32Array(1))[0]!/4294967296*pool.reduce((n,i)=>n+i.weight,0);let selected=pool[pool.length-1]!.reward;for(const item of pool){if(ticket<item.weight){selected=item.reward;break;}ticket-=item.weight;}openModal(`<div class="preview-label">시험 결과 · 실제 지급 아님</div><div class="celebration"><span class="dialog-emoji">${h(selected.icon)}</span><h2>${h(selected.title)}</h2><p>별·재고·쿠폰·뽑기 횟수는 바뀌지 않았어요.</p></div><button class="button primary full" data-action="close-modal">확인</button>`);break;}
-  case 'reverse-grant':case 'revoke-coupon':if(snapshot?.me.role==='admin'&&id){const title=action==='reverse-grant'?'별 지급 오류 정정':'미사용 선물 지급 취소';openModal(`<form id="correction-form" data-kind="${action==='reverse-grant'?'stars/reverse':'coupon/revoke'}" data-id="${h(id)}"><div class="dialog-heading"><h2>${title}</h2><p>원래 기록을 지우지 않고 정정 이력을 남겨요. 벌점용 회수가 아니에요.</p></div><label>정정 사유<textarea name="reason" maxlength="180" required rows="3" autofocus></textarea></label><button class="button primary full" type="submit">정정 내용 확인</button></form>`);}break;
+  case 'reverse-grant':case 'revoke-coupon':if(snapshot?.me.role==='admin'&&id){const title=action==='reverse-grant'?'별 지급 오류 정정':'미사용 선물 지급 취소';openModal(`<form id="correction-form" data-kind="${action==='reverse-grant'?'stars/reverse':'coupon/revoke'}" data-id="${h(id)}"${source.dataset.usageVersion!==undefined?` data-usage-version="${h(source.dataset.usageVersion)}"`:''}><div class="dialog-heading"><h2>${title}</h2><p>원래 기록을 지우지 않고 정정 이력을 남겨요. 벌점용 회수가 아니에요.</p></div><label>정정 사유<textarea name="reason" maxlength="180" required rows="3" autofocus></textarea></label><button class="button primary full" type="submit">정정 내용 확인</button></form>`);}break;
   case 'grant-stars':if(snapshot?.me.role==='admin')openModal(grantStarsForm(snapshot.state.childName));break;
   case 'grant-reward':if(snapshot?.me.role==='admin'){const r=snapshot.state.rewards.find(r=>r.id===id);if(r&&r.active&&(r.stock===null||r.stock>0))openModal(grantRewardForm(r,snapshot.state.childName));}break;
   case 'rename-member':if(snapshot?.me.role==='admin'){const m=snapshot.members.find(m=>m.id===id);if(m)openModal(renameMemberForm(m));}break;
+  case 'set-coupon-minutes':{const form=source.closest('form');const input=form?.querySelector<HTMLInputElement>('[name="minutes"]');if(form&&input){input.value=source.dataset.minutes??'';updateMinuteSummary(form);input.focus();}break;}
   case 'close-modal':closeModal();break;
   case 'switch-role':if(mode==='demo')openRolePicker();break;
   case 'account-info':if(snapshot)openModal(`<div class="dialog-heading"><h2>${h(snapshot.me.name)}의 계정</h2><p>현재 권한은 ${roleName(snapshot.me.role)}예요. 공유 기기에서는 사용 후 로그아웃해 주세요.</p></div><button class="button outline full" data-action="logout">이 기기 로그아웃</button>`);break;
@@ -129,9 +166,10 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
   case 'confirm-action':if(confirmAction)await doAction(confirmAction);break;
   case 'retry-pending':await doAction(undefined,true);break;
   case 'go-inventory':navigate('inventory','all');break;
-  case 'coupon/request':case 'coupon/cancel':case 'coupon/approve':if(id)await doAction({type:action,id});break;
-  case 'reject-coupon':if(id)openModal(`<div class="dialog-heading"><h2>다음에 사용할 수 있도록</h2><p>쿠폰은 사라지지 않고 다시 요청할 수 있어요.</p></div><form id="reject-form" data-id="${h(id)}"><label>아이에게 남길 안내<textarea name="note" maxlength="180" rows="3" required autofocus>이번 주말에 함께 사용해요.</textarea></label><button class="button primary full" type="submit">쿠폰을 보관함으로 돌려주기</button></form>`);break;
-  case 'complete-coupon':if(id)confirm('선물을 전달했나요?','<p class="dialog-help">실제로 선물을 주거나 함께 활동을 마친 뒤 사용 완료로 표시해 주세요.</p>',{type:'coupon/use',id},'네, 사용 완료');break;
+  case 'coupon/request':{if(!id||snapshot?.me.role!=='child')break;const coupon=visibleCoupon(source,id);if(!coupon)break;if(couponTime(coupon))openModal(timeRequestForm(coupon));else await doAction({type:'coupon/request',id});break;}
+  case 'coupon/cancel':case 'coupon/approve':if(id)await doAction({type:action,id,...usageVersionFrom(source)});break;
+  case 'reject-coupon':if(id)openModal(`<div class="dialog-heading"><h2>다음에 사용할 수 있도록</h2><p>쿠폰은 사라지지 않고 다시 요청할 수 있어요.</p></div><form id="reject-form" data-id="${h(id)}"${source.dataset.usageVersion!==undefined?` data-usage-version="${h(source.dataset.usageVersion)}"`:''}><label>아이에게 남길 안내<textarea name="note" maxlength="180" rows="3" required autofocus>이번 주말에 함께 사용해요.</textarea></label><button class="button primary full" type="submit">쿠폰을 보관함으로 돌려주기</button></form>`);break;
+  case 'complete-coupon':{if(!id||snapshot?.me.role!=='admin')break;const coupon=visibleCoupon(source,id);if(!coupon)break;const time=couponTime(coupon);if(time&&time.requestedMinutes!==null)confirm(`${time.requestedMinutes}분 사용을 마쳤나요?`,`<div class="confirm-card"><h3>${h(coupon.title)}</h3><p>승인한 ${time.requestedMinutes}분만 차감해요.</p><p>남은 ${time.remainingMinutes}분 → ${time.remainingMinutes-time.requestedMinutes}분</p></div><p class="dialog-help">실제로 이용한 뒤 사용 완료를 눌러 주세요. 남은 시간은 다음에 다시 쓸 수 있어요.</p>`,{type:'coupon/use',id,...usageVersionFrom(source)},`${time.requestedMinutes}분 사용 완료`);else confirm('선물을 전달했나요?','<p class="dialog-help">실제로 선물을 주거나 함께 활동을 마친 뒤 사용 완료로 표시해 주세요.</p>',{type:'coupon/use',id},'네, 사용 완료');break;}
   case 'open-icon-picker':{iconForm=modal.querySelector<HTMLFormElement>('#reward-form,#rule-form');if(!iconForm)return;iconTrigger=source;const selected=iconForm.querySelector<HTMLInputElement>('[name="icon"]')?.value??'🎁';iconModal.innerHTML=rewardIconPicker(selected,'전체',recentIcons());iconModal.showModal();iconModal.querySelector<HTMLButtonElement>('.reward-icon-choice.selected,.reward-icon-choice')?.focus();break;}
   case 'icon-category':{if(!iconModal.open||!iconForm)return;const category=source.dataset.iconCategory??'전체';const selected=iconForm.querySelector<HTMLInputElement>('[name="icon"]')?.value??'🎁';iconModal.innerHTML=rewardIconPicker(selected,category,recentIcons());iconModal.querySelector<HTMLButtonElement>(`[data-icon-category="${category}"]`)?.focus();break;}
   case 'select-reward-icon':{const hidden=iconForm?.querySelector<HTMLInputElement>('[name="icon"]');if(hidden&&source.dataset.icon){hidden.value=source.dataset.icon;const symbol=iconForm?.querySelector('.selected-reward-icon');if(symbol)symbol.textContent=source.dataset.icon;try{localStorage.setItem('praise-star.recent-icons',JSON.stringify([source.dataset.icon,...recentIcons().filter(x=>x!==source.dataset.icon)].slice(0,12)));}catch{}}closeIcons();break;}
@@ -166,16 +204,27 @@ document.addEventListener('click',event=>{handleClick(event).catch(error=>toast(
 document.addEventListener('submit',event=>{const form=event.target as HTMLFormElement;if(!(form instanceof HTMLFormElement))return;event.preventDefault();if(busy)return;const data=new FormData(form);const value=(key:string)=>String(data.get(key)??'');const number=(key:string)=>Number(value(key));
  (async()=>{switch(form.id){
   case 'rule-form':{const rule={id:form.dataset.id||crypto.randomUUID(),title:value('title'),description:value('description'),icon:value('icon'),stars:number('stars'),dailyLimit:number('dailyLimit'),active:data.has('active'),featured:data.has('featured'),...(form.dataset.id?{version:Number(form.dataset.version)}:{})};await doAction({type:'rule/save',rule});break;}
-  case 'correction-form':{const kind=form.dataset.kind;if(kind==='stars/reverse'||kind==='coupon/revoke')confirm('정정 내용을 기록할까요?',`<p class="dialog-help">${h(value('reason'))}</p>`,{type:kind,id:form.dataset.id!,reason:value('reason')},'정정 기록');break;}
+  case 'correction-form':{const kind=form.dataset.kind;if(kind==='stars/reverse'||kind==='coupon/revoke')confirm('정정 내용을 기록할까요?',`<p class="dialog-help">${h(value('reason'))}</p>`,{type:kind,id:form.dataset.id!,reason:value('reason'),...usageVersionFrom(form)},'정정 기록');break;}
   case 'grant-stars-form':{const stars=number('stars'),reason=value('reason').trim();confirm('별을 직접 지급할까요?',`<div class="confirm-card"><h3>✦ +${h(stars)}개</h3><p>${h(reason)}</p><p>지급 후 ${(snapshot?.state.balance??0)+stars}개</p></div>`,{type:'stars/grant',stars,reason},'별 지급');break;}
-  case 'grant-reward-form':{const r=snapshot?.state.rewards.find(r=>r.id===form.dataset.id);if(!r)break;const reason=value('reason').trim(),quantity=number('quantity');if(!Number.isSafeInteger(quantity)||quantity<1||quantity>20||(r.stock!==null&&quantity>r.stock)){toast('지급 개수 또는 남은 재고를 확인해 주세요.');break;}confirm('이 선물을 직접 지급할까요?',`<div class="confirm-card"><h3>${h(r.icon)} ${h(r.title)}</h3><p>쿠폰 ${quantity}장 · 별 차감 없음</p><p>${h(reason)}</p></div>`,{type:'reward/grant',rewardId:r.id,version:Number(form.dataset.version),reason,quantity},'선물 지급');break;}
+  case 'grant-reward-form':{
+   const r=snapshot?.state.rewards.find(r=>r.id===form.dataset.id);if(!r)break;
+   const reason=value('reason').trim(),quantity=number('quantity'),input=form.querySelector<HTMLInputElement>('[name="minutes"]'),minutes=input?number('minutes'):undefined;
+   if(!Number.isSafeInteger(quantity)||quantity<1||quantity>20||(r.stock!==null&&quantity>r.stock)){dialogError('지급 개수 또는 남은 재고를 확인해 주세요.');break;}
+   if(minutes!==undefined&&(!Number.isSafeInteger(minutes)||minutes<1||minutes>Number(input!.max))){dialogError(`지급할 시간은 1~${input!.max}분 사이의 정수로 입력해 주세요.`);break;}
+   confirm('이 선물을 직접 지급할까요?',`<div class="confirm-card"><h3>${h(r.icon)} ${h(r.title)}</h3><p>${minutes===undefined?`쿠폰 ${quantity}장`:`한 장당 ${minutes}분 × ${quantity}장 · 총 ${minutes*quantity}분`} · 별 차감 없음</p><p>${h(reason)}</p></div>`,{type:'reward/grant',rewardId:r.id,version:Number(form.dataset.version),reason,quantity,...(minutes===undefined?{}:{minutes})},'선물 지급');break;
+  }
+  case 'coupon-minutes-form':{
+   const minutes=number('minutes'),remaining=Number(form.dataset.remainingMinutes);
+   if(!Number.isSafeInteger(minutes)||minutes<1||minutes>remaining){dialogError(`사용할 시간은 1~${remaining}분 사이의 정수로 입력해 주세요.`);break;}
+   await doAction({type:'coupon/request',id:form.dataset.id!,minutes,...usageVersionFrom(form)});break;
+  }
   case 'rename-member-form':await doAction({type:'member/rename',userId:form.dataset.id!,expectedName:form.dataset.expectedName!,displayName:value('displayName')});break;
   case 'praise-form':{const action:Action={type:'praise/give',stars:number('stars'),category:value('category'),reason:value('reason')};const duplicate=snapshot?.state.praises.some(p=>!p.reversed&&p.actorId===snapshot?.me.id&&p.reason===action.reason.trim()&&dayKey(p.createdAt)===dayKey(new Date().toISOString()));if(duplicate)confirm('같은 칭찬을 오늘 이미 남겼어요','<p class="dialog-help">다른 행동에 대한 추가 칭찬인지 확인해 주세요. 실수라면 돌아가서 수정할 수 있어요.</p>',action,'추가 칭찬이 맞아요');else await doAction(action);break;}
-  case 'reward-form':{const reward:Omit<Reward,'version'>&{version?:number}={id:form.dataset.id||crypto.randomUUID(),title:value('title'),description:value('description'),icon:value('icon'),cost:number('cost'),stock:data.has('unlimited')?null:number('stock'),active:data.has('active'),shop:data.has('shop'),gacha:data.has('gacha')};if(form.dataset.id)reward.version=Number(form.dataset.version);await doAction({type:'reward/save',reward});break;}
+  case 'reward-form':{const reward:Omit<Reward,'version'>&{version?:number}={id:form.dataset.id||crypto.randomUUID(),title:value('title'),description:value('description'),icon:value('icon'),cost:number('cost'),stock:data.has('unlimited')?null:number('stock'),active:data.has('active'),shop:data.has('shop'),gacha:data.has('gacha'),durationMinutes:data.has('timeCoupon')?number('durationMinutes'):null};if(form.dataset.id)reward.version=Number(form.dataset.version);await doAction({type:'reward/save',reward});break;}
   case 'box-form':{const items=[...data.entries()].filter(([key,val])=>key.startsWith('weight-')&&Number(val)>0).map(([key,val])=>({rewardId:key.slice(7),weight:Number(val)}));await doAction({type:'box/save',box:{title:value('title'),cost:number('cost'),dailyLimit:number('dailyLimit'),items}});break;}
   case 'profile-form':await doAction({type:'profile/save',familyName:value('familyName'),childName:value('childName')});break;
   case 'reverse-form':await doAction({type:'praise/reverse',id:form.dataset.id!,reason:value('reason')});break;
-  case 'reject-form':await doAction({type:'coupon/reject',id:form.dataset.id!,note:value('note')});break;
+  case 'reject-form':await doAction({type:'coupon/reject',id:form.dataset.id!,note:value('note'),...usageVersionFrom(form)});break;
   case 'login-form':await adminOperation(async()=>{auth??=new AuthClient(config,localStorage);await auth.login(value('email'),value('password'));form.reset();busy=false;await initialize();});break;
   case 'child-join-form':await adminOperation(async()=>{auth??=new AuthClient(config,localStorage);if(auth.session()&&!auth.session()?.user.is_anonymous)throw new Error('보호자 계정을 먼저 로그아웃해 주세요.');if(!auth.session())await auth.anonymous();const cloud=new CloudRepository(auth);snapshot=await cloud.joinFamily(value('code'),value('name'));sessionStorage.removeItem('praise-star.invite');inviteCode='';backend=cloud;busy=false;render();});break;
   case 'create-family-form':if(backend instanceof CloudRepository)await adminOperation(async()=>{snapshot=await (backend as CloudRepository).createFamily(value('familyName'),value('childName'),value('displayName'));busy=false;render();});break;
@@ -183,10 +232,16 @@ document.addEventListener('submit',event=>{const form=event.target as HTMLFormEl
   case 'invite-form':if(backend instanceof CloudRepository)await adminOperation(async()=>{latestInvite=await (backend as CloudRepository).invite(value('role') as Role);busy=false;const invite=latestInvite!;openModal(`<div class="dialog-heading"><h2>가족 초대가 준비됐어요</h2><p>${roleName(invite.role)} 초대 · 한 번만 사용 · 48시간 후 만료</p></div><div class="invite-code">${h(invite.code)}</div><p class="dialog-help">${invite.role==='child'?'새 기기에서 “아이 기기 연결”을 선택하고 기기 이름과 코드를 입력하세요. 별과 선물은 연준이 프로필에서 공유해요.':'성인 가족은 보호자가 Supabase에서 계정을 먼저 생성한 뒤 로그인하고 이 초대를 사용해요.'}</p><div class="button-row"><button class="button primary" data-action="copy-invite">코드 복사</button><button class="button outline" data-action="copy-invite-link">초대 링크 복사</button></div>`);});break;
  }})().catch(error=>{if(modal.open)dialogError(err(error));else toast(err(error));});
 });
-document.addEventListener('input',event=>{const target=event.target as HTMLInputElement;if(target.name==='rewardQuery'){rewardQuery=target.value;const start=target.selectionStart,end=target.selectionEnd;render();const input=document.querySelector<HTMLInputElement>('[name="rewardQuery"]');input?.focus();if(start!==null&&end!==null)input?.setSelectionRange(start,end);return;}const form=target.closest('form');if(form?.id==='praise-form'){const data=new FormData(form);const message=String(data.get('reason')??'');const text=document.querySelector('#praise-preview-text');const stars=document.querySelector('#praise-preview-stars');const count=document.querySelector('#reason-count');if(text)text.textContent=message||'작은 도전도 멋진 칭찬이 돼요.';if(stars)stars.textContent=`✦ ${String(data.get('stars'))}개`;if(count)count.textContent=`${message.length} / 180`;}
+document.addEventListener('input',event=>{const target=event.target as HTMLInputElement;if(target.name==='rewardQuery'){rewardQuery=target.value;const start=target.selectionStart,end=target.selectionEnd;render();const input=document.querySelector<HTMLInputElement>('[name="rewardQuery"]');input?.focus();if(start!==null&&end!==null)input?.setSelectionRange(start,end);return;}const form=target.closest('form');
+ if(form?.id==='grant-reward-form'||form?.id==='coupon-minutes-form')updateMinuteSummary(form);
+ if(form?.id==='reward-form'){
+  if(target.name==='durationMinutes'){const fields=form.querySelector<HTMLElement>('.time-reward-fields');if(fields)fields.dataset.durationManual='true';}
+  if(target.name==='title')updateRewardTimeFields(form,true);
+ }
+ if(form?.id==='praise-form'){const data=new FormData(form);const message=String(data.get('reason')??'');const text=document.querySelector('#praise-preview-text');const stars=document.querySelector('#praise-preview-stars');const count=document.querySelector('#reason-count');if(text)text.textContent=message||'작은 도전도 멋진 칭찬이 돼요.';if(stars)stars.textContent=`✦ ${String(data.get('stars'))}개`;if(count)count.textContent=`${message.length} / 180`;}
  if(form?.id==='box-form'){const total=[...new FormData(form).entries()].filter(([key])=>key.startsWith('weight-')).reduce((sum,[,v])=>sum+(Number(v)||0),0);const label=document.querySelector('#weight-total');if(label){label.textContent=`합계 ${total}%`;label.classList.toggle('invalid',total!==100);}}
 });
-document.addEventListener('change',event=>{const target=event.target as HTMLInputElement;if(target.name==='rewardStatus'){rewardStatus=target.value;render();document.querySelector<HTMLSelectElement>('[name="rewardStatus"]')?.focus();return;}if(target.name==='unlimited'){const stock=target.form?.querySelector<HTMLInputElement>('[name="stock"]');if(stock)stock.disabled=target.checked;}if(target.name==='stars')target.dispatchEvent(new Event('input',{bubbles:true}));});
+document.addEventListener('change',event=>{const target=event.target as HTMLInputElement;if(target.name==='rewardStatus'){rewardStatus=target.value;render();document.querySelector<HTMLSelectElement>('[name="rewardStatus"]')?.focus();return;}if(target.name==='timeCoupon'&&target.form){const fields=target.form.querySelector<HTMLElement>('.time-reward-fields');if(fields)fields.dataset.durationManual='true';updateRewardTimeFields(target.form);}if(target.name==='unlimited'){const stock=target.form?.querySelector<HTMLInputElement>('[name="stock"]');if(stock)stock.disabled=target.checked;}if(target.name==='stars')target.dispatchEvent(new Event('input',{bubbles:true}));});
 modal.addEventListener('cancel',event=>{event.preventDefault();closeModal();});
 modal.addEventListener('click',event=>{if(event.target===modal){const r=modal.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)closeModal();}});
 window.addEventListener('storage',event=>{if(mode==='demo'&&event.key===DEMO_KEY&&snapshot)void refresh(true);});

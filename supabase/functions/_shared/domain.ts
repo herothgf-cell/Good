@@ -3,13 +3,14 @@ export type Role = 'admin' | 'giver' | 'child';
 export interface Actor { id: string; name: string; role: Role }
 export interface Reward {
   id: string; title: string; description: string; icon: string;
-  cost: number; stock: number | null; active: boolean; shop: boolean; gacha: boolean; version: number;
+  cost: number; stock: number | null; active: boolean; shop: boolean; gacha: boolean; version: number; durationMinutes?: number | null;
 }
 export interface Box { title: string; cost: number; dailyLimit: number; version: number; items: { rewardId: string; weight: number }[] }
 export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean; ruleId?: string }
 export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw' | 'grant' | 'gift' | 'revoke'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
 export type CouponStatus = 'available' | 'requested' | 'approved' | 'used' | 'revoked';
-export interface Coupon { id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw' | 'gift'; grantedById?: string; grantedByName?: string; grantReason?: string; stockConsumed?: boolean; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string; revokedAt?: string; revokedBy?: string; revokeReason?: string }
+export interface CouponUsage { id: string; minutes: number; usedAt: string; actorId: string; actorName: string }
+export interface Coupon { durationMinutes?: number | null; remainingMinutes?: number; requestedMinutes?: number; usageVersion?: number; usageHistory?: CouponUsage[]; id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw' | 'gift'; grantedById?: string; grantedByName?: string; grantReason?: string; stockConsumed?: boolean; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string; revokedAt?: string; revokedBy?: string; revokeReason?: string }
 export interface Draw { id: string; cost: number; couponId: string; rewardId: string; boxTitle: string; day: string; createdAt: string; odds: { rewardId: string; title: string; probability: number }[] }
 export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number}
 export interface State {
@@ -21,9 +22,10 @@ export type Action =
   | {type:'rule/save';rule:Omit<PraiseRule,'version'>&{version?:number}}
   | {type:'praise/rule';ruleId:string;version:number}
   | {type:'letters/read';ids:string[]}
-  | {type:'stars/reverse'|'coupon/revoke';id:string;reason:string}
+  | {type:'stars/reverse';id:string;reason:string}
+  | {type:'coupon/revoke';id:string;reason:string;usageVersion?:number}
   | {type: 'stars/grant'; stars: number; reason: string}
-  | {type: 'reward/grant'; rewardId: string; version: number; reason: string; quantity?: number}
+  | {type: 'reward/grant'; rewardId: string; version: number; reason: string; quantity?: number; minutes?: number}
   | {type: 'praise/give'; stars: number; category: string; reason: string}
   | {type: 'praise/reverse'; id: string; reason: string}
   | {type: 'reward/save'; reward: Omit<Reward, 'version'> & {version?: number}}
@@ -31,7 +33,7 @@ export type Action =
   | {type: 'gacha/set-enabled'; enabled: boolean}
   | {type: 'spend/shop'; rewardId: string; version: number}
   | {type: 'spend/draw'; quote: string}
-  | {type: 'coupon/request' | 'coupon/cancel' | 'coupon/approve' | 'coupon/reject' | 'coupon/use'; id: string; note?: string}
+  | {type: 'coupon/request' | 'coupon/cancel' | 'coupon/approve' | 'coupon/reject' | 'coupon/use'; id: string; note?: string; minutes?: number; usageVersion?: number}
   | {type: 'goal/set'; rewardId: string}
   | {type: 'profile/save'; familyName: string; childName: string};
 export interface Context { actor: Actor; now: string; newId: () => string; random: () => number }
@@ -51,6 +53,55 @@ function integer(value: unknown, min: number, max: number, message: string): ass
 }
 function allow(actor: Actor, roles: Role[]) {
   if (!actor || !roles.includes(actor.role)) fail('FORBIDDEN', '이 작업을 할 권한이 없어요. 보호자에게 요청해 주세요.');
+}
+const hasOwn = (value: object, key: PropertyKey): boolean => Object.prototype.hasOwnProperty.call(value, key);
+const validDuration = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 1 && value <= 1440;
+/** Infer only one clear whole-minute Korean duration, with an optional hour + minute pair. */
+export function durationFromTitle(title: string): number | null {
+  if (typeof title !== 'string' || /\d\s*초/.test(title) || /(?:시간|분)\s*반/.test(title)) return null;
+  const matches = [...title.matchAll(/([+\-−]?\s*\d+(?:[.,]\d+)?)\s*(시간|분)/g)];
+  if (matches.length < 1 || matches.length > 2) return null;
+  for (const match of matches) {
+    const before = title.slice(0, match.index);
+    const after = title.slice(match.index! + match[0].length);
+    if (!/^\s*\d+$/.test(match[1]!) || /(?:[\d.,+\-−~～/]|\d[eE]|0[xXbBoO])\s*$/.test(before) || /^\s*[~～/]/.test(after)) return null;
+  }
+  const first = matches[0]!;
+  let minutes = Number(first[1]) * (first[2] === '시간' ? 60 : 1);
+  if (matches.length === 2) {
+    const second = matches[1]!;
+    if (first[2] !== '시간' || second[2] !== '분' || Number(first[1]) < 1 || Number(second[1]) >= 60 ||
+      title.slice(first.index! + first[0].length, second.index).trim()) return null;
+    minutes += Number(second[1]);
+  }
+  return validDuration(minutes) ? minutes : null;
+}
+export function rewardDuration(reward: Reward): number | null {
+  return hasOwn(reward, 'durationMinutes') ? validDuration(reward.durationMinutes) ? reward.durationMinutes : null : durationFromTitle(reward.title);
+}
+export interface CouponTime { totalMinutes: number; remainingMinutes: number; requestedMinutes: number | null; usageVersion: number; usageHistory: CouponUsage[] }
+/** Pure legacy normalization uses the issued coupon title, never the mutable reward. */
+export function couponTime(coupon: Coupon): CouponTime | null {
+  const totalMinutes = hasOwn(coupon, 'durationMinutes') ? validDuration(coupon.durationMinutes) ? coupon.durationMinutes : null : durationFromTitle(coupon.title);
+  if (totalMinutes === null) return null;
+  const terminal = coupon.status === 'used' || coupon.status === 'revoked';
+  const remainingMinutes = terminal ? 0 : coupon.remainingMinutes === undefined ? totalMinutes :
+    Number.isSafeInteger(coupon.remainingMinutes) && coupon.remainingMinutes >= 0 && coupon.remainingMinutes <= totalMinutes ? coupon.remainingMinutes : 0;
+  const pending = coupon.status === 'requested' || coupon.status === 'approved';
+  const requestedMinutes = pending ? coupon.requestedMinutes === undefined ? remainingMinutes :
+    validDuration(coupon.requestedMinutes) && coupon.requestedMinutes <= remainingMinutes ? coupon.requestedMinutes : null : null;
+  return {totalMinutes, remainingMinutes, requestedMinutes,
+    usageVersion: Number.isSafeInteger(coupon.usageVersion) && coupon.usageVersion! >= 0 ? coupon.usageVersion! : 0,
+    usageHistory: (coupon.usageHistory ?? []).map(usage => ({...usage}))};
+}
+function captureTime(coupon: Coupon, time: CouponTime, version: unknown): void {
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version !== time.usageVersion || time.usageVersion >= Number.MAX_SAFE_INTEGER)
+    fail('QUOTE_CHANGED', '쿠폰 사용 내역이 바뀌었어요. 새로고침한 뒤 최신 내용을 확인해 주세요.');
+  coupon.durationMinutes = time.totalMinutes;
+  coupon.remainingMinutes = time.remainingMinutes;
+  coupon.requestedMinutes = time.requestedMinutes ?? undefined;
+  coupon.usageHistory = time.usageHistory;
+  coupon.usageVersion = time.usageVersion + 1;
 }
 export function dayKey(time: string): string {
   const ms = new Date(time).getTime();
@@ -79,7 +130,10 @@ export function validateReward(r: unknown, existing?: Reward): Reward {
   integer(x.cost, 1, 10000, '가격은 1~10,000 사이의 정수여야 해요.');
   if (x.stock !== null) integer(x.stock, 0, 100000, '재고는 0 이상의 정수 또는 무제한이어야 해요.');
   for (const field of ['active','shop','gacha'] as const) if (typeof x[field] !== 'boolean') fail('INVALID_INPUT', '보상 공개 설정을 확인해 주세요.');
-  return {id: text(x.id,'보상 ID',80),title:text(x.title,'보상 이름',60),description:text(x.description,'보상 설명',240,true),
+  const duration = hasOwn(x, 'durationMinutes') ? x.durationMinutes : existing && hasOwn(existing, 'durationMinutes') ? existing.durationMinutes : undefined;
+  if (hasOwn(x, 'durationMinutes') && duration !== null) integer(duration, 1, 1440, '시간은 1~1,440분의 정수로 입력해 주세요.');
+  const durationFields = hasOwn(x, 'durationMinutes') || existing && hasOwn(existing, 'durationMinutes') ? {durationMinutes: duration} : {};
+  return {...durationFields,id: text(x.id,'보상 ID',80),title:text(x.title,'보상 이름',60),description:text(x.description,'보상 설명',240,true),
     icon:text(x.icon,'아이콘',12),cost:x.cost,stock:x.stock,active:x.active,shop:x.shop,gacha:x.gacha,version:existing ? existing.version + 1 : 1};
 }
 function appendLedger(s: State, ctx: Context, kind: Ledger['kind'], delta: number, reason: string, refId: string) {
@@ -89,10 +143,10 @@ function appendLedger(s: State, ctx: Context, kind: Ledger['kind'], delta: numbe
   s.balance = balance;
   s.ledger.push({id:ctx.newId(),kind,delta,balance,reason,actorId:ctx.actor.id,actorName:ctx.actor.name,createdAt:ctx.now,refId});
 }
-function acquire(s: State, reward: Reward, source: Coupon['source'], cost: number, ctx: Context): Coupon {
+function acquire(s: State, reward: Reward, source: Coupon['source'], cost: number, ctx: Context, minutes: number | null = rewardDuration(reward)): Coupon {
   if (reward.stock !== null && reward.stock < 1) fail('SOLD_OUT', '보상 재고가 없어요. 다른 선물을 골라 주세요.');
   if (s.balance < cost) fail('INSUFFICIENT_STARS', '별이 부족해요. 칭찬 별을 조금 더 모아 주세요.');
-  const coupon: Coupon = {id:ctx.newId(),rewardId:reward.id,title:reward.title,description:reward.description,icon:reward.icon,source,stockConsumed:reward.stock!==null,status:'available',createdAt:ctx.now};
+  const coupon: Coupon = {id:ctx.newId(),rewardId:reward.id,title:reward.title,description:reward.description,icon:reward.icon,source,stockConsumed:reward.stock!==null,status:'available',createdAt:ctx.now,durationMinutes:minutes,...(minutes===null?{}:{remainingMinutes:minutes,usageVersion:0,usageHistory:[]})};
   appendLedger(s,ctx,source === 'gift' ? 'gift' : source === 'shop' ? 'purchase' : 'draw',cost===0?0:-cost,source === 'gift' ? `${reward.title} 보호자 직접 지급` : source === 'shop' ? `${reward.title} 교환` : `${s.box.title} 뽑기`,coupon.id);
   if (reward.stock !== null) { reward.stock--; reward.version++; }
   s.inventory.push(coupon);
@@ -158,7 +212,14 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       const reason=text(action.reason,'회수 사유',180);
       const coupon=s.inventory.find(c=>c.id===action.id);
       if(!coupon||coupon.source!=='gift')fail('NOT_FOUND','직접 지급한 선물만 회수할 수 있어요.');
+      const time=couponTime(coupon);
+      if(time) {
+        captureTime(coupon,time,action.usageVersion);
+        if (hasOwn(action,'minutes')) fail('INVALID_INPUT','회수할 때 사용 시간을 변경할 수 없어요.');
+        if(time.remainingMinutes!==time.totalMinutes || time.usageHistory.length) fail('INVALID_STATE','한 번도 사용하지 않은 선물만 회수할 수 있어요.');
+      }
       if(coupon.status!=='available')fail('INVALID_STATE','아직 사용 요청하지 않은 선물만 회수할 수 있어요.');
+      if(time)coupon.remainingMinutes=0;
       coupon.status='revoked';coupon.revokedAt=ctx.now;coupon.revokedBy=ctx.actor.name;coupon.revokeReason=reason;
       const reward=s.rewards.find(r=>r.id===coupon.rewardId);
       if(reward&&reward.stock!==null&&coupon.stockConsumed===true){if(reward.stock>=100000)fail('LIMIT','재고 한도를 확인해 주세요.');reward.stock++;reward.version++;}
@@ -181,15 +242,21 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       const reward=s.rewards.find(r=>r.id===action.rewardId&&r.active);
       if(!reward)fail('NOT_FOUND','공개 중인 보상을 선택해 주세요.');
       if(action.version!==reward.version)fail('QUOTE_CHANGED','보상 설정이나 재고가 바뀌었어요. 최신 내용을 확인해 주세요.');
+      const duration=rewardDuration(reward);
+      if(hasOwn(action,'minutes')) {
+        if(duration===null)fail('INVALID_INPUT','일반 쿠폰에는 시간을 지정할 수 없어요.');
+        integer(action.minutes,1,duration,'지급 시간은 보상의 전체 시간 이내인 양의 정수로 입력해 주세요.');
+      }
+      const minutes=hasOwn(action,'minutes')?action.minutes!:duration;
       if(reward.stock!==null&&reward.stock<quantity)fail('SOLD_OUT','선물 재고가 부족해요.');
       let first:Coupon|undefined;
       for(let i=0;i<quantity;i++){
-        const coupon=acquire(s,reward,'gift',0,ctx);
+        const coupon=acquire(s,reward,'gift',0,ctx,minutes);
         coupon.grantedById=ctx.actor.id;coupon.grantedByName=ctx.actor.name;coupon.grantReason=reason;
-        s.ledger[s.ledger.length-1]!.reason='보호자 선물: '+reward.title+' · '+reason;
+        s.ledger[s.ledger.length-1]!.reason='보호자 선물: '+reward.title+(minutes===null?'':` · 지급 ${minutes}분`)+' · '+reason;
         first??=coupon;
       }
-      result={message:'별 차감 없이 '+quantity+'장의 선물을 지급했어요!',coupon:quantity===1?first:undefined};break;
+      result={message:'별 차감 없이 '+quantity+'장의 선물'+(minutes===null?'':` (${minutes}분씩 · 총 ${minutes*quantity}분)`)+'을 지급했어요!',coupon:quantity===1?first:undefined};break;
     }
     case 'praise/give': {
       allow(ctx.actor,['admin','giver']);
@@ -277,8 +344,37 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       allow(ctx.actor,adminAction?['admin']:['child']);
       const c=s.inventory.find(c=>c.id===action.id);
       if(!c)fail('NOT_FOUND','보상 쿠폰을 찾지 못했어요.');
+      const time=couponTime(c);
+      if(time) {
+        captureTime(c,time,action.usageVersion);
+        if(action.type!=='coupon/request' && hasOwn(action,'minutes'))fail('INVALID_INPUT','요청한 사용 시간은 변경할 수 없어요. 새로 요청해 주세요.');
+      }
       const expected: Record<string,CouponStatus>={'coupon/request':'available','coupon/cancel':'requested','coupon/approve':'requested','coupon/reject':'requested','coupon/use':'approved'};
       if(c.status!==expected[action.type])fail('INVALID_STATE','쿠폰 상태가 바뀌었어요. 새로 확인해 주세요.');
+      if(time) {
+        if(action.type==='coupon/request') {
+          integer(action.minutes,1,time.remainingMinutes,'사용 시간은 남은 시간 이내인 양의 정수로 입력해 주세요.');
+          c.status='requested';c.requestedMinutes=action.minutes;c.requestedAt=ctx.now;c.approvedAt=undefined;c.note=undefined;
+          result={message:`${action.minutes}분 사용을 보호자에게 요청했어요.`};
+        } else if(action.type==='coupon/cancel' || action.type==='coupon/reject') {
+          c.status='available';c.requestedMinutes=undefined;c.requestedAt=undefined;c.approvedAt=undefined;
+          if(action.type==='coupon/reject')c.note=text(action.note??'지금은 어렵지만 다음에 사용해요.','안내',180);
+          result={message:action.type==='coupon/cancel'?'사용 요청을 취소했어요.':'쿠폰을 보관함으로 돌려보냈어요. 다시 요청할 수 있어요.'};
+        } else {
+          if(time.requestedMinutes===null || time.requestedMinutes<1)fail('INVALID_STATE','요청한 시간을 확인할 수 없어요. 새로고침해 주세요.');
+          if(action.type==='coupon/approve') {
+            c.status='approved';c.approvedAt=ctx.now;
+            result={message:`${time.requestedMinutes}분 사용을 승인했어요. 선물을 준 뒤 사용 완료를 눌러 주세요.`};
+          } else {
+            c.remainingMinutes=time.remainingMinutes-time.requestedMinutes;
+            c.usageHistory!.push({id:ctx.newId(),minutes:time.requestedMinutes,usedAt:ctx.now,actorId:ctx.actor.id,actorName:ctx.actor.name});
+            c.requestedMinutes=undefined;c.requestedAt=undefined;c.approvedAt=undefined;
+            c.status=c.remainingMinutes===0?'used':'available';c.usedAt=c.remainingMinutes===0?ctx.now:undefined;
+            result={message:`${time.requestedMinutes}분 사용을 완료했어요! 남은 시간은 ${c.remainingMinutes}분이에요.`};
+          }
+        }
+        break;
+      }
       if(action.type==='coupon/request'){c.status='requested';c.requestedAt=ctx.now;c.note=undefined;result={message:'보호자에게 사용을 요청했어요.'};}
       else if(action.type==='coupon/cancel'){c.status='available';c.requestedAt=undefined;result={message:'사용 요청을 취소했어요.'};}
       else if(action.type==='coupon/approve'){c.status='approved';c.approvedAt=ctx.now;result={message:'사용을 승인했어요. 선물을 준 뒤 사용 완료를 눌러 주세요.'};}

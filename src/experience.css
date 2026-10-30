@@ -1,4 +1,17 @@
 /* v0.5: readable, role-specific mobile experience. */
+.time-reward-fields{border:1px solid #e3d7ef;border-radius:14px;padding:14px 16px;margin:20px 0;min-width:0}
+.time-reward-fields legend{font-size:14px;color:#5d4674;padding:0 6px;font-weight:650}
+.time-duration-field[hidden]{display:none}.time-duration-field{margin-top:12px}
+.minute-presets{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.minute-presets .button{min-width:62px}
+.minute-summary{padding:12px 14px;border-radius:12px;background:#f4eefb;color:#5b397e;font-size:15px;line-height:1.6;margin:14px 0}
+.time-grant-fields{margin-bottom:20px}.time-grant-fields>.small{margin-bottom:12px}
+.time-request-balance{display:flex;align-items:center;justify-content:space-between;gap:14px;background:#f4eefb;border:1px solid #e0d1ef;border-radius:16px;padding:18px;margin:18px 0;color:#5b397e}
+.time-request-balance strong{font-size:28px}.coupon-time-details{background:#f7f2fd;border:1px solid #e7dcf2;border-radius:14px;padding:14px 16px;margin:14px 0}
+.coupon-time-balance{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 16px}.coupon-time-balance strong{font-size:22px;color:#5b397e}.coupon-time-balance span{font-size:14px;color:#6c587d}
+.coupon-group .coupon-card p.coupon-time-pending{font-size:15px;color:#5b397e;margin-bottom:0}
+.coupon-use-history{border-top:1px solid #dfd2ed;margin-top:12px;padding-top:8px}.coupon-use-history>summary{font-size:14px;min-height:44px;display:flex;align-items:center;cursor:pointer;color:#5d4674}.coupon-use-history>summary::before{content:'▸';margin-right:8px}.coupon-use-history[open]>summary::before{content:'▾'}
+.coupon-use-history ul{list-style:none;margin:0;padding:0}.coupon-use-history li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px 14px;padding:9px 0}.coupon-use-history li strong{font-size:14px}.coupon-use-history li span{font-size:13px;color:#71657c}
+.coupon-group>summary>b>small{font-size:13px;white-space:normal;text-align:right}
 :root{--muted:#71657c;--ink:#2d2438;font-size:16px}
 body{overflow-wrap:anywhere}button,input,textarea,select{font:inherit}input,textarea,select{font-size:16px}
 label{font-size:14px}label>input,label>textarea,label>select{font-size:16px}
