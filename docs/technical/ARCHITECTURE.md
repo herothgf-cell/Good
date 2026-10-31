@@ -5,11 +5,14 @@
 ```text
 src/ui.ts           순수 화면 렌더링, 사용자 문자열 HTML 이스케이프
 src/main.ts         화면 전환·폼·확인창·요청 재시도·15초 조회
+src/learning.ts     보호자 학습 테스트·공개 확인·짧은 활동 진행
 src/backend.ts      체험 저장소 / Supabase 클라우드 어댑터
 src/auth.ts         로그인·세션 갱신·HTTP 오류 구분·공개 설정 검사
 src/export.ts       JSON 다운로드와 수식 주입 방지 CSV
 supabase/functions/_shared/domain.ts  거래 규칙의 단일 원본
 supabase/functions/_shared/service.ts 명령 검증·요청 영수증·revision 재시도
+supabase/functions/_shared/learning.ts 학습 권한·초안/공개·완료/칭찬 규칙
+supabase/functions/_shared/learning-content.ts 검토한 고정 활동과 완료 답 검증
 supabase/functions/family-action/     실제 Edge HTTP 진입점 (웹 빌드 제외)
 supabase/migrations/                 RLS·초대·원자적 상태 commit
 scripts/build.mjs                    ES module 배포 + standalone HTML 생성
@@ -50,3 +53,7 @@ PWA 워커는 정적 앱 셸만 캐시하고 인증/API 응답은 가로채지 �
 부모가 동일 설정을 동시에 편집하면 보상은 version 검사로 막습니다. 뽑기 상자 설정은 마지막 저장이 적용되는 현재 구조이며 각 뽑기에는 최신 quote 확인을 요구합니다. 관리 설정 전반의 편집 충돌 UI는 후속 개선 대상입니다.
 
 공개 서비스용 CAPTCHA, 요청 빈도 제한, 접근 로그 보존 정책, 강제 계정 복구/가족 소유권 이전, 실제 RLS 침투 테스트는 미완료입니다. 서비스 운영 완료나 외부 보안 감사를 받은 코드라고 표현하지 않습니다.
+
+## 보호자 학습 테스트
+
+학습은 선택적인 가족 상태로 추가하며 기존 가족에 자동 공개하지 않습니다. 공개 초안과 실제 공개 설정을 분리하고, 모든 공개/중지에 단조 증가하는 순번을 사용합니다. 완료는 기존 명령/CAS 경계를 거치고, 칭찬은 보호자의 별도 확인 이후 기존 원장에 기록합니다. 자세한 상태·기록 보관·배포 경계는 [학습 안내](LEARNING_LAB.md)를 참고하세요.

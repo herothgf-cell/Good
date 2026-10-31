@@ -1,6 +1,6 @@
 # 연준이의 칭찬 별나라 ✦
 
-**v0.6.0 · 가족 공동 칭찬·확정 선물·꽝 없는 뽑기 웹앱**
+**v0.7.0 · 가족 공동 칭찬·쿠폰·보호자 학습 테스트 웹앱**
 
 소스 저장소: **herothgf-cell/Good**. TypeScript 정적 PWA + Supabase로 만들었습니다.
 
@@ -13,6 +13,7 @@
 - 꽝 없는 뽑기: 아이 화면에서는 기본 숨김. 보호자 설정에서 공개/숨김 전환. 비용·일일 횟수·확률 편집, 결과 저장, 중복 요청 방지.
 - 보관함: 사용 요청 → 보호자 승인 → 사용 완료, 취소·반려.
 - 시간 쿠폰: TV 30분 이용권 등을 분 단위로 나눠 지급·사용. 남은 시간과 사용 이력 표시, 보호자 사용 완료 시에만 차감. [사용법](docs/technical/TIME_COUPONS.md).
+- 보호자 학습 테스트: 영어 3개·수학 3개 활동. 보호자 미리보기 후 명시적으로 아이에게 공개. 완료 후 보호자 확인으로 칭찬 별 지급. 기본 미공개. [사용법](docs/technical/LEARNING_LAB.md).
 - 가족 공유 코드: 성인 로그인, 아이 기기 연결, 1회용 초대, 역할별 권한, 15초 갱신.
 - 보상 관리·칭찬 기록·JSON/CSV 내보내기, 모바일 화면, PWA 자산.
 
@@ -55,7 +56,7 @@ SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_KEY
 
 ## GitHub에서 검사 / Pages 배포
 
-- **Actions → Verify Praise Star:** 커밋마다 타입·도메인/동시성 자동 검사·기존 화면 및 시간 쿠폰 브라우저 시나리오·PostgreSQL 검사를 실행합니다. 결과와 체험판은 실행 상세의 Artifacts에서 받습니다.
+- **Actions → Verify Praise Star:** 커밋마다 타입·도메인/동시성 자동 검사·기존 화면·시간 쿠폰·학습 브라우저 시나리오·PostgreSQL 검사를 실행합니다. 결과와 체험판은 실행 상세의 Artifacts에서 받습니다.
 - **Pages를 사용할 때:** Settings → Pages → Source를 **GitHub Actions**로 설정한 뒤 Actions → **Deploy family web app to Pages** → Run workflow를 실행합니다.
 - `demo`는 서버 없는 체험판, `cloud`는 공유 서버 연결용입니다. `cloud`는 Settings → Secrets and variables → Actions → **Variables**에 공개 URL/공개 키가 있어야 합니다. 서버 비밀 키는 넣지 않습니다.
 - Pages를 켠 경우 예상 주소는 `https://herothgf-cell.github.io/Good/`입니다. **실제 배포 성공 전에는 접속 가능한 주소라고 간주하지 마세요.**

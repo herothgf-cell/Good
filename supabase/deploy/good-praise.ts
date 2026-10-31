@@ -1,8 +1,8 @@
-// good-praise deployment entrypoint. Shared business logic is pinned to the v0.6.0 source commit.
+// good-praise deployment entrypoint. Upload this file and its relative dependencies together.
 // Hosted Edge environment is read-only: inject origin through configuration.
-import {loadServerConfig} from 'https://raw.githubusercontent.com/herothgf-cell/Good/7d03a1ebcc6183019f55a56513dc4b070c810e51/supabase/functions/_server/config.js';
-import {processCommand, type CommandStore, type CommitData, type Receipt, type Loaded} from 'https://raw.githubusercontent.com/herothgf-cell/Good/7d03a1ebcc6183019f55a56513dc4b070c810e51/supabase/functions/_shared/service.ts';
-import {DomainError} from 'https://raw.githubusercontent.com/herothgf-cell/Good/7d03a1ebcc6183019f55a56513dc4b070c810e51/supabase/functions/_shared/domain.ts';
+import {loadServerConfig} from '../functions/_server/config.js';
+import {processCommand, type CommandStore, type CommitData, type Receipt, type Loaded} from '../functions/_shared/service.ts';
+import {DomainError} from '../functions/_shared/domain.ts';
 
 const config=loadServerConfig(name=>name==='APP_ORIGIN'?'https://herothgf-cell.github.io':Deno.env.get(name));
 const URL=config.url;
