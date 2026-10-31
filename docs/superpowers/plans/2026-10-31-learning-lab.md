@@ -59,5 +59,12 @@
 **Files:** Add `tests/learning_browser_test.py`, `docs/technical/LEARNING_LAB.md`, release report; update package/version/current status and deployment entrypoint as needed.
 - [x] Run typecheck, complete unit suite, existing and new browser tests, and existing database gate in CI (local type/unit/browser gates completed).
 - [x] Obtain independent code review, resolve material findings, and inspect rendered screenshots.
-- [ ] Save source/tests/docs to GitHub with a lease against the inspected main SHA; deploy the compatible Edge function and Pages build.
-- [ ] Verify deployment commit/status, unauthenticated API behavior, and read-only production unpublished state. Do not modify real learning/reward data for testing.
+- [x] Save source/tests/docs to GitHub with a lease against the inspected main SHA; deploy the compatible Edge function and Pages build.
+- [x] Verify deployment commit/status, unauthenticated API behavior, and read-only production unpublished state. Do not modify real learning/reward data for testing.
+
+## Release evidence
+
+- Source PR #2 merged; runtime commit `f5681a9af09d9cc11435a5180561d3d5f5d363e4`.
+- 362 unit tests; 73 browser groups; CI PostgreSQL gate passed.
+- Independent review fixes rechecked; Edge version8 and Pages run41210844912 verified.
+- Production learning remained unpublished. See docs/verification/LEARNING_LAB_RELEASE.md.
