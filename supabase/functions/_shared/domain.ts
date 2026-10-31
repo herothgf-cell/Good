@@ -1,4 +1,5 @@
 /** Pure, shared business rules. No database, UI, clock, or global randomness. */
+import {applyLearningAction,type LearningAction,type LearningState} from './learning.ts';
 export type Role = 'admin' | 'giver' | 'child';
 export interface Actor { id: string; name: string; role: Role }
 export interface Reward {
@@ -6,7 +7,7 @@ export interface Reward {
   cost: number; stock: number | null; active: boolean; shop: boolean; gacha: boolean; version: number; durationMinutes?: number | null;
 }
 export interface Box { title: string; cost: number; dailyLimit: number; version: number; items: { rewardId: string; weight: number }[] }
-export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean; ruleId?: string }
+export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean; ruleId?: string; learningRunId?: string }
 export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw' | 'grant' | 'gift' | 'revoke'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
 export type CouponStatus = 'available' | 'requested' | 'approved' | 'used' | 'revoked';
 export interface CouponUsage { id: string; minutes: number; usedAt: string; actorId: string; actorName: string }
@@ -15,10 +16,11 @@ export interface Draw { id: string; cost: number; couponId: string; rewardId: st
 export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number}
 export interface State {
   schema: 1; familyName: string; childName: string; balance: number; lifetimeEarned: number; goalRewardId: string | null;
-  praiseRules?: PraiseRule[]; readPraiseIds?: string[]; gachaEnabled?: boolean;
+  praiseRules?: PraiseRule[]; readPraiseIds?: string[]; gachaEnabled?: boolean; learning?: LearningState;
   rewards: Reward[]; box: Box; praises: Praise[]; ledger: Ledger[]; inventory: Coupon[]; draws: Draw[];
 }
 export type Action =
+  | LearningAction
   | {type:'rule/save';rule:Omit<PraiseRule,'version'>&{version?:number}}
   | {type:'praise/rule';ruleId:string;version:number}
   | {type:'letters/read';ids:string[]}
@@ -37,7 +39,7 @@ export type Action =
   | {type: 'goal/set'; rewardId: string}
   | {type: 'profile/save'; familyName: string; childName: string};
 export interface Context { actor: Actor; now: string; newId: () => string; random: () => number }
-export interface Result { message: string; coupon?: Coupon; praiseId?: string }
+export interface Result { message: string; coupon?: Coupon; praiseId?: string; learningRunId?: string }
 export interface Transition { state: State; result: Result }
 export class DomainError extends Error {
   constructor(public code: string, message: string) { super(message); this.name = 'DomainError'; }
@@ -161,6 +163,21 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
   let result: Result;
   dayKey(ctx.now);
   switch (action.type) {
+    case 'learning/save-draft':
+    case 'learning/complete-preview':
+    case 'learning/publish':
+    case 'learning/unpublish':
+    case 'learning/complete':
+    case 'learning/praise': {
+      result=applyLearningAction(s,action,ctx,(run,lesson)=>{
+        const reason=`${lesson.title} 활동을 끝까지 해냈어요`;
+        const praise:Praise={id:ctx.newId(),actorId:ctx.actor.id,actorName:ctx.actor.name,stars:run.stars,
+          category:'학습 노력',reason,createdAt:ctx.now,reversed:false,learningRunId:run.id};
+        appendLedger(s,ctx,'praise',run.stars,reason,praise.id);
+        s.praises.push(praise);s.lifetimeEarned+=run.stars;
+        return praise.id;
+      });break;
+    }
     case 'rule/save': {
       allow(ctx.actor,['admin']);
       if(!action.rule||typeof action.rule!=='object')fail('INVALID_INPUT','칭찬 행동을 확인해 주세요.');
