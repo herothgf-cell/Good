@@ -1,5 +1,6 @@
 /** Pure, shared business rules. No database, UI, clock, or global randomness. */
 import {applyLearningAction,type LearningAction,type LearningState} from './learning.ts';
+import {applyLearningLabAction,type LearningLabAction,type LearningLabState} from './learning-lab.ts';
 export type Role = 'admin' | 'giver' | 'child';
 export interface Actor { id: string; name: string; role: Role }
 export interface Reward {
@@ -16,11 +17,12 @@ export interface Draw { id: string; cost: number; couponId: string; rewardId: st
 export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number}
 export interface State {
   schema: 1; familyName: string; childName: string; balance: number; lifetimeEarned: number; goalRewardId: string | null;
-  praiseRules?: PraiseRule[]; readPraiseIds?: string[]; gachaEnabled?: boolean; learning?: LearningState;
+  praiseRules?: PraiseRule[]; readPraiseIds?: string[]; gachaEnabled?: boolean; learning?: LearningState; learningLab?: LearningLabState;
   rewards: Reward[]; box: Box; praises: Praise[]; ledger: Ledger[]; inventory: Coupon[]; draws: Draw[];
 }
 export type Action =
   | LearningAction
+  | LearningLabAction
   | {type:'rule/save';rule:Omit<PraiseRule,'version'>&{version?:number}}
   | {type:'praise/rule';ruleId:string;version:number}
   | {type:'letters/read';ids:string[]}
@@ -39,7 +41,7 @@ export type Action =
   | {type: 'goal/set'; rewardId: string}
   | {type: 'profile/save'; familyName: string; childName: string};
 export interface Context { actor: Actor; now: string; newId: () => string; random: () => number }
-export interface Result { message: string; coupon?: Coupon; praiseId?: string; learningRunId?: string }
+export interface Result { message: string; coupon?: Coupon; praiseId?: string; learningRunId?: string; coachReservationId?: string }
 export interface Transition { state: State; result: Result }
 export class DomainError extends Error {
   constructor(public code: string, message: string) { super(message); this.name = 'DomainError'; }
@@ -163,6 +165,11 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
   let result: Result;
   dayKey(ctx.now);
   switch (action.type) {
+    case 'learning-lab/save-settings':
+    case 'learning-lab/complete-preview':
+    case 'learning-lab/reserve-coach-turn': {
+      result=applyLearningLabAction(s,action,ctx);break;
+    }
     case 'learning/save-draft':
     case 'learning/complete-preview':
     case 'learning/publish':

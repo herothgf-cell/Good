@@ -61,6 +61,9 @@ def non_learning_records(tab):
 def nav(tab, screen):
     menu = ".mobile-nav" if tab.viewport_size["width"] <= 760 else ".sidebar nav"
     tab.locator(f'{menu} [data-nav="{screen}"]').click()
+    # Legacy regression suite explicitly enters the preserved v0.7 controls.
+    if screen == "learning" and tab.locator('[data-action="learning-legacy"]').count():
+        tab.locator('[data-action="learning-legacy"]').click()
 
 
 def role(tab, actor):
