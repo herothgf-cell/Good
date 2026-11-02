@@ -1,3 +1,4 @@
+import type {SpeechPort} from './cloud-speech.ts';
 import type {LabSettings} from '../supabase/functions/_shared/learning-lab-content.ts';
 
 export interface CoachMessage {role:'assistant'|'user';text:string;hint?:string;modelPhrase?:string;}
@@ -8,10 +9,11 @@ export interface CoachPort {
   startRecording(topic:LabSettings['topic']):Promise<void>;
   finishRecording():Promise<void>;
   sendText(text:string,topic:LabSettings['topic']):Promise<void>;
+  replay?():Promise<void>;
   leave():void;
 }
 export interface CoachIdentity {familyId:string;actorId:string;role:string;mode:'demo'|'cloud';}
-export interface CoachHost {identity:()=>CoachIdentity|null;request:(body:unknown,signal:AbortSignal)=>Promise<any>;render:()=>void;}
+export interface CoachHost {voice?:SpeechPort;identity:()=>CoachIdentity|null;request:(body:unknown,signal:AbortSignal)=>Promise<any>;render:()=>void;}
 export class LearningCoach implements CoachPort {
   private state:CoachView=this.initial();
   private generation=0;private identityKey='';private sessionId='';private startedAt=0;
@@ -19,6 +21,7 @@ export class LearningCoach implements CoachPort {
   private chunks:Blob[]=[];private bytes=0;private topic:LabSettings['topic']='play';
   private timer:ReturnType<typeof setTimeout>|undefined;private speechTimer:ReturnType<typeof setTimeout>|undefined;
   private utterance:SpeechSynthesisUtterance|null=null;
+  private lastSpeech='';
   constructor(private host:CoachHost){
     if(typeof document!=='undefined')document.addEventListener('visibilitychange',()=>{if(document.hidden){this.leave();this.host.render();}});
   }
@@ -115,9 +118,20 @@ export class LearningCoach implements CoachPort {
       if(!this.current(generation,key))return;
       if(typeof result.transcript!=='string'||result.transcript.length>600||typeof result.reply!=='string'||result.reply.length>240||typeof result.speech!=='string'||result.speech.length>400)throw new Error('AI 답변 형식을 확인하지 못했어요.');
       this.state.messages=[...this.state.messages,{role:'user' as const,text:result.transcript},{role:'assistant' as const,text:result.reply,hint:typeof result.hint==='string'?result.hint.slice(0,160):'',modelPhrase:typeof result.modelPhrase==='string'?result.modelPhrase.slice(0,100):''}].slice(-24);
-      this.speak(result.speech,generation,key);
+      this.lastSpeech=result.speech;
+      if(this.host.voice)await this.speakCloud(result.speech,generation,key);else this.speak(result.speech,generation,key);
     }catch(error){if(this.current(generation,key))this.update({phase:'error',message:`${this.errorMessage(error)} 자동으로 재전송하지 않았어요.`});}
     finally{if(generation===this.generation)this.operation=null;}
+  }
+  async replay():Promise<void>{
+    if(!this.host.voice||!this.lastSpeech||this.busy()||!this.allowed())return;
+    await this.speakCloud(this.lastSpeech,this.generation,this.identityKey);
+  }
+  private async speakCloud(text:string,generation:number,key:string):Promise<void>{
+    this.update({phase:'speaking',message:'같은 답변을 AI 음성으로 준비하고 있어요. 글도 함께 볼 수 있어요.'});
+    const outcome=await this.host.voice!.play({text});
+    if(!this.current(generation,key))return;
+    this.update({phase:'ready',message:outcome==='ended'?'이제 대답해 보세요. 말하거나 글을 입력할 수 있어요.':outcome==='blocked'?'소리 재생이 막혔어요. ‘AI 답변 다시 듣기’를 눌러 주세요.':outcome==='cancelled'?'음성을 멈췄어요.':'AI 음성을 준비하지 못했어요. 글 답변은 유지했어요. ‘AI 답변 다시 듣기’로 확인해 주세요.'});
   }
   private speak(text:string,generation:number,key:string){
     const voice=typeof speechSynthesis==='undefined'?undefined:speechSynthesis.getVoices().find(v=>v.localService&&/^en(?:-|_)/i.test(v.lang));
@@ -145,7 +159,7 @@ export class LearningCoach implements CoachPort {
     this.stream?.getTracks().forEach(track=>track.stop());this.stream=null;this.recorder=null;this.chunks=[];this.bytes=0;
   }
   leave():void{
-    this.utterance=null;this.generation++;this.operation?.abort();this.operation=null;this.stopMedia();clearTimeout(this.speechTimer);this.speechTimer=undefined;
+    this.host.voice?.stop();this.lastSpeech='';this.utterance=null;this.generation++;this.operation?.abort();this.operation=null;this.stopMedia();clearTimeout(this.speechTimer);this.speechTimer=undefined;
     if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();
     this.identityKey='';this.sessionId='';this.startedAt=0;this.state=this.initial();
   }
