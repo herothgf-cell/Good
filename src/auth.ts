@@ -54,7 +54,16 @@ export class AuthClient {
   async apiTransient(path:string,body:unknown,signal:AbortSignal):Promise<any>{
     const s=await this.validSession();if(signal.aborted)throw new DOMException('Aborted','AbortError');
     const response=await fetch(`${this.config.supabaseUrl}${path}`,{method:'POST',headers:this.headers(s.access_token),body:JSON.stringify(body),signal:AbortSignal.any([signal,AbortSignal.timeout(60000)]),cache:'no-store'});
-    const raw=await response.text();if(raw.length>20000)throw new ApiError('대화 응답을 확인하지 못했어요.',502);
+    // Narrated WAV responses exceed the text-only SDP limit. Bound bytes while
+    // streaming so a malformed provider cannot allocate an unbounded response.
+    const limit=path==='/functions/v1/learning-coach'?3100000:20000;
+    const reader=response.body?.getReader();const chunks:Uint8Array[]=[];let size=0;
+    if(!reader)throw new ApiError('대화 응답을 확인하지 못했어요.',502);
+    try{for(;;){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;
+      if(size>limit){await reader.cancel();throw new ApiError('대화 응답이 너무 커서 중단했어요.',502);}chunks.push(part.value);}}
+    finally{reader.releaseLock();}
+    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+    const raw=new TextDecoder().decode(bytes);
     let result:any;try{result=JSON.parse(raw);}catch{throw new ApiError('대화 응답을 읽지 못했어요.',502);}
     if(!response.ok)throw new ApiError(typeof result?.error==='string'?result.error.slice(0,240):'AI 연결을 확인해 주세요.',response.status,false,result?.code??'');
     return result;
