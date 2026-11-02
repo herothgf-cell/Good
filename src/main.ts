@@ -2,6 +2,8 @@ import {timeRequestForm} from './time-coupons.ts';
 import {LearningController} from './learning.ts';
 import {LearningLabController} from './learning-lab.ts';
 import {LearningCoach} from './learning-coach.ts';
+import {LearningRealtime} from './learning-realtime.ts';
+import {updateRealtimePanel} from './learning-realtime-ui.ts';
 import {canonical} from '../supabase/functions/_shared/service.ts';
 import {canVisit,ruleEditor,letterDetail,preview} from './experience.ts';
 import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
@@ -39,8 +41,9 @@ function toast(message:string){clearTimeout(toastTimer);toastElement.textContent
 const learning=new LearningController({snapshot:()=>snapshot,perform:action=>doAction(action),render,toast});
 let legacyLearning=false;
 const coach=new LearningCoach({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render,request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 AI 연결을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-coach',body,signal);}});
-const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach});
-function leaveLearning(){learning.leave();learningLab.leave();coach.leave();}
+const realtime=new LearningRealtime({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render:()=>{if(!updateRealtimePanel(realtime.view()))render();},request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 음성을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-realtime',body,signal);}});
+const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach,realtime});
+function leaveLearning(){learning.leave();learningLab.leave();coach.leave();realtime.leave();}
 function learningView():string{if(!snapshot)return '';if(snapshot.me.role==='admin'&&!legacyLearning)return learningLab.render(snapshot);return (snapshot.me.role==='admin'?'<button class="button outline" data-action="learning-v2">← 새 학습 테스트로 돌아가기</button>':'')+learning.render(snapshot);}
 function dialogError(message:string){const el=modal.querySelector<HTMLDivElement>('.dialog-error');if(el)el.textContent=message;else toast(message);}
 function render(){if(!snapshot)return;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learningView():undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}

@@ -118,6 +118,7 @@ def main():
         poll(tab,'settings');expect(tab.locator('.lab-paused')).to_contain_text('설정이 바뀌었어요');expect(action(tab,'restart')).to_be_visible()
         action(tab,'restart').click();expect(tab.locator('[data-lab-form="answer"]')).to_be_visible()
         action(tab,'back').click();tab.locator('[data-lab-action="start"][data-lesson-id="english-conversation"]').click()
+        action(tab,'legacy-coach-toggle').click()
         expect(tab.locator('.lab-coach')).to_contain_text('보호자 목소리로 AI 연결 테스트');expect(tab.locator('.lab-question')).to_contain_text('시나리오 미리보기')
         expect(action(tab,'coach-record')).to_be_disabled();tab.locator('#lab-coach-message').fill('Adult test message');action(tab,'coach-check').click();expect(tab.locator('#lab-coach-message')).to_have_value('Adult test message');expect(tab.locator('.lab-progress')).to_have_attribute('aria-valuenow','1');expect(tab.locator('.lab-coach-status')).to_contain_text(re.compile('체험|설정|연결'))
         assert tab.evaluate('window.__microphoneRequests')==0

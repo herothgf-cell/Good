@@ -32,3 +32,12 @@ assert.ok([200,204].includes(preflight.status), `Preflight failed: ${preflight.s
 assert.equal(preflight.headers.get('access-control-allow-origin'), origin, 'CORS origin must match Good Pages');
 console.log('PASS Pages origin CORS preflight');
 console.log('Not tested: real login, authenticated mutations, child sign-in, or cross-device synchronization.');
+
+// New Realtime broker: exercise only unauthenticated read-only boundaries.
+for (const authorization of [null,'Bearer invalid-test-token']) {
+ const r=await request('/functions/v1/learning-realtime',{method:'POST',headers:{'Content-Type':'application/json',...(authorization?{Authorization:authorization}:{})},body:'{}'});
+ assert.equal(r.status,401,'Realtime requires a valid user JWT');
+}
+const rt=await request('/functions/v1/learning-realtime',{method:'OPTIONS',headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,apikey,content-type'}});
+assert.ok([200,204].includes(rt.status));assert.equal(rt.headers.get('access-control-allow-origin'),origin);
+console.log('PASS Realtime no/invalid JWT rejection and Pages CORS (no user data or paid call created)');

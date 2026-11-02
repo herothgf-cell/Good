@@ -1,9 +1,11 @@
 import type {Snapshot} from './backend.ts';
 import type {CoachPort} from './learning-coach.ts';
+import type {RealtimePort} from './learning-realtime.ts';
+import {renderRealtimePanel} from './learning-realtime-ui.ts';
 import {learningLabFor,type LearningLabAction} from '../supabase/functions/_shared/learning-lab.ts';
 import {LAB_CATALOG,LAB_CONTENT_VERSION,buildLabLesson,validateLabSettings,normalizeLabAnswer,evaluateLabAnswers,type LabLesson,type LabLessonId,type LabSettings,type LabStep,type LabAnswer,type LabHelp} from '../supabase/functions/_shared/learning-lab-content.ts';
 import {labEscape as e,renderLabVisual} from './learning-lab-visuals.ts';
-export interface LearningLabHost {snapshot:()=>Snapshot|null;perform:(action:LearningLabAction)=>Promise<boolean>;render:()=>void;toast:(message:string)=>void;coach:CoachPort;}
+export interface LearningLabHost {snapshot:()=>Snapshot|null;perform:(action:LearningLabAction)=>Promise<boolean>;render:()=>void;toast:(message:string)=>void;coach:CoachPort;realtime?:RealtimePort;}
 interface Session {identity:string;lesson:LabLesson;settings:LabSettings;version:number;seed:number;runId:string;index:number;answers:LabAnswer[];attempts:number;help:LabHelp;input:string;feedback:string;revealed:boolean;hint:boolean;plays:number;pending:LabAnswer|null;paused:boolean;finished:boolean;saving:boolean;saved:boolean;stale:boolean;}
 const identity=(s:Snapshot)=>JSON.stringify([s.familyId,s.me.id,s.me.role]);
 const ranks:Record<LabHelp,number>={none:0,replay:1,hint:2,model:3};
@@ -19,6 +21,7 @@ export class LearningLabController {
  private draftStale=false;
  private settingsBusy=false;
  private coachText='';
+ private legacyCoachOpen=false;
  private evidence:'guardian'|'self'='guardian';
  private attached=false;
  private readonly onInput=(event:Event)=>{
@@ -34,10 +37,10 @@ export class LearningLabController {
  constructor(private readonly host:LearningLabHost){}
  private attach():void{if(this.attached||typeof document==='undefined')return;document.addEventListener('input',this.onInput);document.addEventListener('change',this.onInput);document.addEventListener('visibilitychange',this.onVisibility);this.attached=true;}
  private stopSpeech():void{if(typeof speechSynthesis!=='undefined')speechSynthesis.cancel();}
- private stopAll():void{this.stopSpeech();this.host.coach.leave();}
- leave():void{this.stopAll();this.session=null;this.actor='';this.draft=null;this.draftDirty=false;this.draftStale=false;this.coachText='';this.evidence='guardian';if(this.attached&&typeof document!=='undefined'){document.removeEventListener('input',this.onInput);document.removeEventListener('change',this.onInput);document.removeEventListener('visibilitychange',this.onVisibility);}this.attached=false;}
+ private stopAll():void{this.stopSpeech();this.host.coach.leave();this.host.realtime?.leave();}
+ leave():void{this.stopAll();this.session=null;this.legacyCoachOpen=false;this.actor='';this.draft=null;this.draftDirty=false;this.draftStale=false;this.coachText='';this.evidence='guardian';if(this.attached&&typeof document!=='undefined'){document.removeEventListener('input',this.onInput);document.removeEventListener('change',this.onInput);document.removeEventListener('visibilitychange',this.onVisibility);}this.attached=false;}
  reconcile(snapshot:Snapshot):boolean{
-  const key=identity(snapshot);let changed=false;
+  this.host.realtime?.reconcile();const key=identity(snapshot);let changed=false;
   if(this.actor&&this.actor!==key){this.leave();changed=true;}
   if(snapshot.me.role!=='admin'){if(this.session||this.draft){this.leave();changed=true;}return changed;}
   this.actor=key;const lab=learningLabFor(snapshot.state);
@@ -58,7 +61,7 @@ export class LearningLabController {
  private start(snapshot:Snapshot,id:string):void{
   if(!LAB_CATALOG.some(l=>l.id===id))return;
   this.stopAll();const lab=learningLabFor(snapshot.state),seed=crypto.getRandomValues(new Uint32Array(1))[0]!%2147483648;
-  const settings={...lab.settings};this.coachText='';this.evidence='guardian';
+  const settings={...lab.settings};this.coachText='';this.legacyCoachOpen=false;this.evidence='guardian';
   this.session={identity:identity(snapshot),lesson:buildLabLesson(id as LabLessonId,settings,seed),settings,version:lab.settingsVersion,seed,runId:crypto.randomUUID(),index:0,answers:[],attempts:0,help:'none',input:'',feedback:'',revealed:false,hint:false,plays:0,pending:null,paused:false,finished:false,saving:false,saved:false,stale:false};this.attach();
  }
  private step():LabStep|undefined{const s=this.session;return s&&!s.paused&&!s.finished&&!s.stale?s.lesson.steps[s.index]:undefined;}
@@ -78,7 +81,7 @@ export class LearningLabController {
   else s.feedback='아직 맞지 않았어요. 천천히 다시 입력하거나 힌트·함께 보기를 선택해요.';
  }
  private speak():void{
-  const s=this.session,q=this.step();if(!s||!q||q.kind!=='practice'||s.pending)return;this.stopSpeech();
+  const s=this.session,q=this.step();if(!s||!q||q.kind!=='practice'||s.pending)return;this.host.realtime?.leave();this.host.coach.leave();this.stopSpeech();
   if(typeof speechSynthesis==='undefined'||typeof SpeechSynthesisUtterance==='undefined'){this.host.toast('소리를 사용할 수 없어요. 글자 도움을 보거나 보호자가 읽어 주세요.');return;}
   const voice=speechSynthesis.getVoices().find(v=>v.localService&&v.lang.toLowerCase().startsWith('en'));
   if(!voice){this.host.toast('기기에 저장된 영어 음성이 없어요. 함께 보기의 글자를 보호자가 읽어 주세요.');return;}
@@ -111,8 +114,15 @@ export class LearningLabController {
    }
    else if(s.lesson.id==='english-conversation'){
     try{
-     if(action==='coach-check')await this.host.coach.check();
-     else if(action==='coach-record'){this.stopSpeech();if(this.host.coach.view().available===true)await this.host.coach.startRecording(s.settings.topic);}
+     if(action==='realtime-start'){this.stopSpeech();this.host.coach.leave();this.legacyCoachOpen=false;await this.host.realtime?.start(s.settings.topic);}
+     else if(action==='realtime-check')await this.host.realtime?.check();
+     else if(action==='realtime-stop')this.host.realtime?.stop();
+     else if(action==='realtime-audio')await this.host.realtime?.enableAudio();
+     else if(action==='realtime-captions')this.host.realtime?.toggleCaptions();
+     else if(action==='realtime-marin'||action==='realtime-cedar')this.host.realtime?.setVoice(action==='realtime-marin'?'marin':'cedar');
+     else if(action==='legacy-coach-toggle'){this.host.realtime?.leave();this.legacyCoachOpen=!this.legacyCoachOpen;}
+     else if(action==='coach-check'){this.host.realtime?.leave();await this.host.coach.check();}
+     else if(action==='coach-record'){this.host.realtime?.leave();this.stopSpeech();if(this.host.coach.view().available===true)await this.host.coach.startRecording(s.settings.topic);}
      else if(action==='coach-stop')await this.host.coach.finishRecording();
      else if(action==='coach-leave')this.host.coach.leave();
     }catch{this.host.toast('AI 연결을 마치지 못했어요. 연결 상태를 확인해 주세요.');}
@@ -120,7 +130,7 @@ export class LearningLabController {
   }
   this.host.render();
   if(['start','next','restart'].includes(action??'')&&typeof document!=='undefined'){
-   const heading=document.querySelector<HTMLElement>('.lab-question h1, .lab-summary h1');
+   const heading=document.querySelector<HTMLElement>('.voice-panel h1, .lab-question h1, .lab-summary h1');
    if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});heading.scrollIntoView({block:'nearest'});}
   }
  }
@@ -134,7 +144,7 @@ export class LearningLabController {
    try{if(await this.host.perform({type:'learning-lab/save-settings',settings,version})){const current=this.host.snapshot();if(current&&identity(current)===identity(snapshot)){const lab=learningLabFor(current.state);this.draft={...lab.settings};this.draftVersion=lab.settingsVersion;this.draftDirty=false;this.draftStale=false;this.host.toast('다음 테스트에 사용할 설정을 저장했어요.');}}}catch{this.host.toast('설정을 저장하지 못했어요. 입력한 설정을 유지했어요.');}finally{this.settingsBusy=false;}
   }else if(kind==='coach'&&this.step()&&this.session?.lesson.id==='english-conversation'){
    const s=this.session,text=String(data.get('message')??'').trim().slice(0,500);if(!text)return;
-   this.coachText=text;this.stopSpeech();try{await this.host.coach.sendText(text,s.settings.topic);if(this.session===s)this.coachText='';}catch{this.host.toast('메시지를 보내지 못했어요. 연결 상태를 확인해 주세요.');}
+   this.coachText=text;this.stopSpeech();try{this.host.realtime?.leave();await this.host.coach.sendText(text,s.settings.topic);if(this.session===s)this.coachText='';}catch{this.host.toast('메시지를 보내지 못했어요. 연결 상태를 확인해 주세요.');}
   }
   this.host.render();
  }
@@ -147,7 +157,7 @@ export class LearningLabController {
  }
  private renderHome(snapshot:Snapshot):string{
   const lab=learningLabFor(snapshot.state);
-  return `<header class="lab-heading"><div><span class="lab-eyebrow">LEARNING STUDIO · V2</span><h1>학습 테스트</h1><p>알고 있는 것에서, 새로운 상황으로 한 걸음.</p></div><span class="lab-badge">보호자 전용 · 아이 미공개</span></header><section class="lab-hero"><span aria-hidden="true">🌱</span><div><h2>정답보다, 어떻게 생각했는지</h2><p>영어는 듣기·떠올리기·읽기를 나누고, 수학은 직접 답하며 표현을 연결해요. 활동마다 목표와 단계가 달라요.</p><small>보호자 테스트 기록 · 별 0개 · 아이의 완료 기록과 별도로 보관</small></div></section>${(['english','math'] as const).map(subject=>`<section class="lab-section"><div class="lab-section-heading"><h2>${subject==='english'?'영어 · 듣고, 떠올리고, 말하기':'수학 · 계산을 생활 속 생각으로'}</h2><span>${subject==='english'?'3가지 활동':'6가지 활동'}</span></div><div class="lab-catalog">${LAB_CATALOG.filter(l=>l.subject===subject).map(l=>`<article class="lab-card lab-card-${subject}"><div class="lab-card-icon" aria-hidden="true">${e(l.icon)}</div><h3>${e(l.title)}</h3><p>${e(l.description)}</p><div class="lab-card-goal">목표 · ${e(l.goal)}</div>${btn('테스트 시작 →','start',`data-lesson-id="${e(l.id)}"`,'primary')}<small>${lab.previews.some(r=>r.lessonId===l.id&&r.contentVersion===LAB_CONTENT_VERSION)?'✓ 보호자 테스트 기록 있음':'새로운 활동 미리 해보기'}</small></article>`).join('')}</div></section>`).join('')}${this.renderSettings()}<section class="lab-panel"><div class="lab-section-heading"><h2>영역별 테스트 관찰</h2><span>자동 진단이 아닌 활동 기록</span></div>${Object.keys(lab.previewProgress).length?`<div class="lab-progress-grid">${Object.values(lab.previewProgress).map(p=>`<article><strong>${e(this.skillLabel(p.skillId))}</strong><p>스스로 ${p.independent} · 도움 ${p.supported} · 다시 연습 ${p.review}</p><small>관찰 ${p.observed}회 · 최근 ${e(resultName(p.lastOutcome))}</small></article>`).join('')}</div>`:'<p class="lab-muted">활동을 마치면 영역별로 스스로 한 시도와 도움받은 시도를 모아 보여 드려요.</p>'}</section><section class="lab-panel"><div class="lab-section-heading"><h2>최근 보호자 테스트</h2><span>최근 ${lab.previews.length}개 · 별 0개</span></div>${lab.previews.length?`<div class="lab-history">${[...lab.previews].reverse().map(r=>`<article><div><h3>${e(LAB_CATALOG.find(l=>l.id===r.lessonId)?.title??r.lessonId)}</h3><p>${e(r.actorName)} · ${e(this.date(r.completedAt))}</p></div><div><strong>스스로 ${r.independent} · 도움 ${r.supported} · 다시 ${r.review}</strong><small>관찰 ${r.observed} · 설정 v${r.settingsVersion} · ${r.total}단계</small></div></article>`).join('')}</div>`:'<p class="lab-muted">위에서 활동을 선택해 끝까지 해 보세요. 실패한 저장은 같은 기록으로 다시 시도할 수 있어요.</p>'}</section><footer class="lab-footer"><p>기존에 공개한 학습과 보상 기록은 이전 메뉴에서 관리해요.</p><button class="lab-button lab-quiet" data-action="learning-legacy">이전 학습 관리·기록 열기 →</button></footer>`;
+  return `<header class="lab-heading"><div><span class="lab-eyebrow">LEARNING STUDIO · V2</span><h1>학습 테스트</h1><p>알고 있는 것에서, 새로운 상황으로 한 걸음.</p></div><span class="lab-badge">보호자 전용 · 아이 미공개</span></header><section class="lab-hero"><span aria-hidden="true">🌱</span><div><h2>정답보다, 어떻게 생각했는지</h2><p>영어는 듣기·떠올리기·읽기를 나누고, 수학은 직접 답하며 표현을 연결해요. 활동마다 목표와 단계가 달라요.</p><small>보호자 테스트 기록 · 별 0개 · 아이의 완료 기록과 별도로 보관</small></div></section>${(['english','math'] as const).map(subject=>`<section class="lab-section"><div class="lab-section-heading"><h2>${subject==='english'?'영어 · 듣고, 떠올리고, 말하기':'수학 · 계산을 생활 속 생각으로'}</h2><span>${subject==='english'?'3가지 활동':'6가지 활동'}</span></div><div class="lab-catalog">${LAB_CATALOG.filter(l=>l.subject===subject).map(l=>`<article class="lab-card lab-card-${subject}"><div class="lab-card-icon" aria-hidden="true">${e(l.icon)}</div><h3>${e(l.id==='english-conversation'&&this.host.realtime?'AI와 음성으로 대화하기':l.title)}</h3><p>${e(l.id==='english-conversation'&&this.host.realtime?'시작 버튼 한 번으로 AI가 듣고 목소리로 답해요. 성인 보호자 전용 실시간 회화예요.':l.description)}</p><div class="lab-card-goal">목표 · ${e(l.goal)}</div>${btn('테스트 시작 →','start',`data-lesson-id="${e(l.id)}"`,'primary')}<small>${lab.previews.some(r=>r.lessonId===l.id&&r.contentVersion===LAB_CONTENT_VERSION)?'✓ 보호자 테스트 기록 있음':'새로운 활동 미리 해보기'}</small></article>`).join('')}</div></section>`).join('')}${this.renderSettings()}<section class="lab-panel"><div class="lab-section-heading"><h2>영역별 테스트 관찰</h2><span>자동 진단이 아닌 활동 기록</span></div>${Object.keys(lab.previewProgress).length?`<div class="lab-progress-grid">${Object.values(lab.previewProgress).map(p=>`<article><strong>${e(this.skillLabel(p.skillId))}</strong><p>스스로 ${p.independent} · 도움 ${p.supported} · 다시 연습 ${p.review}</p><small>관찰 ${p.observed}회 · 최근 ${e(resultName(p.lastOutcome))}</small></article>`).join('')}</div>`:'<p class="lab-muted">활동을 마치면 영역별로 스스로 한 시도와 도움받은 시도를 모아 보여 드려요.</p>'}</section><section class="lab-panel"><div class="lab-section-heading"><h2>최근 보호자 테스트</h2><span>최근 ${lab.previews.length}개 · 별 0개</span></div>${lab.previews.length?`<div class="lab-history">${[...lab.previews].reverse().map(r=>`<article><div><h3>${e(LAB_CATALOG.find(l=>l.id===r.lessonId)?.title??r.lessonId)}</h3><p>${e(r.actorName)} · ${e(this.date(r.completedAt))}</p></div><div><strong>스스로 ${r.independent} · 도움 ${r.supported} · 다시 ${r.review}</strong><small>관찰 ${r.observed} · 설정 v${r.settingsVersion} · ${r.total}단계</small></div></article>`).join('')}</div>`:'<p class="lab-muted">위에서 활동을 선택해 끝까지 해 보세요. 실패한 저장은 같은 기록으로 다시 시도할 수 있어요.</p>'}</section><footer class="lab-footer"><p>기존에 공개한 학습과 보상 기록은 이전 메뉴에서 관리해요.</p><button class="lab-button lab-quiet" data-action="learning-legacy">이전 학습 관리·기록 열기 →</button></footer>`;
  }
  private skillLabel(id:string):string{
   const parts=id.split('.'),last=parts.at(-1)??'';
@@ -165,9 +175,10 @@ export class LearningLabController {
   const calculation:[string,string][]=[['no-regroup','받아올림·내림 없이'],['regroup','받아올림·내림 포함'],['mixed','두 유형 섞어서']];
   return `<section class="lab-panel"><div class="lab-section-heading"><h2>영역별 다음 활동 설정</h2><span>저장한 설정 v${this.draftVersion}</span></div><p class="lab-muted">잘하는 영역은 유지하고, 필요한 기술만 조절해요. 설정 저장 후 시작하는 활동에 적용돼요.</p>${this.draftStale?`<div class="lab-alert" role="status">다른 기기에서 설정이 바뀌었어요. 입력은 보관했어요. 최신 설정을 불러온 뒤 다시 조절해 주세요.${btn('최신 설정 불러오기','reset-settings')}</div>`:''}<form data-lab-form="settings"><fieldset><legend>영어</legend><div class="lab-settings-grid">${this.select('topic','대화 장면',[['play','함께 놀기'],['shop','가게 놀이'],['build','만들기']])}${this.select('conversationSupport','대화 도움',[['guided','문장·단어 도움 넉넉히'],['light','필요할 때만 도움']])}${this.select('phonics','읽기 소리 패턴',[['ai-ay','ai / ay · 기본'],['silent-e','silent e'],['cvc','짧은 모음 CVC']])}</div></fieldset><fieldset><legend>수학</legend><div class="lab-settings-grid">${this.select('addition','두 자리 덧셈',calculation)}${this.select('subtraction','두 자리 뺄셈',calculation)}${this.select('moneyUnit','돈 표현 단위',[[100,'100원 동전'],[1000,'1,000원 지폐'],[10000,'10,000원 지폐']])}${this.select('clockLevel','시간 관계',[[1,'같은 시간 안에서'],[2,'한 시간을 넘어서'],[3,'시작 시각·걸린 시간']])}${this.select('calendarLevel','날짜 관계',[[1,'같은 달 안에서'],[2,'달을 넘어서']])}${this.select('groupSize','같은 수 묶기',[[2,'2개씩 묶기'],[3,'3개씩 묶기']])}${this.select('patternLevel','수 규칙',[[1,'일정한 간격'],[2,'두 규칙 번갈아']])}</div></fieldset><div class="lab-actions"><button class="lab-button lab-primary" type="submit" ${this.settingsBusy||this.draftStale?'disabled':''}>${this.settingsBusy?'저장하고 있어요…':'다음 활동 설정 저장'}</button>${btn('저장된 설정 불러오기','reset-settings','','quiet')}</div><p class="lab-note">아이 공개 기능은 이번 버전에 포함되지 않아요.</p></form></section>`;
  }
- private renderSession(s:Session):string{
+ private renderSession(s:Session,legacy=false):string{
   const lesson=s.lesson,total=lesson.steps.length;
   if(s.finished)return this.renderSummary(s);
+  if(!legacy&&lesson.id==='english-conversation'&&this.host.realtime&&!s.paused&&!s.stale)return `<div class="lab-runner"><div class="lab-runner-top">${btn('← 활동 목록','back','','quiet')}<span class="lab-badge">보호자 테스트 · 아이 미공개</span>${btn('잠깐 쉬기','pause','','quiet')}</div>${renderRealtimePanel(this.host.realtime.view())}<details class="voice-legacy" ${this.legacyCoachOpen?'open':''}><summary data-lab-action="legacy-coach-toggle">이전 녹음·글자 테스트와 고정 문장 연습 (비교용)</summary>${this.renderSession(s,true)}</details></div>`;
   const q=lesson.steps[s.index]!;
   return `<div class="lab-runner"><div class="lab-runner-top">${btn('← 활동 목록','back','','quiet')}<span class="lab-badge">보호자 테스트 · 별 0개</span>${btn(s.paused?'계속하기':'잠깐 쉬기','pause','','quiet')}</div><div class="lab-goal"><span>${e(lesson.icon)} ${e(lesson.title)}</span><p>${e(lesson.goal)}</p></div><div class="lab-progress-caption"><span>${s.index+1} / ${total}단계</span><span>${e(q.title)}</span></div><div class="lab-progress" role="progressbar" aria-label="활동 진행" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${s.index+1}"><span style="width:${(s.index+1)/total*100}%"></span></div>${s.stale?`<section class="lab-question lab-paused"><h1>설정이 바뀌었어요</h1><p>활동을 시작한 뒤 다른 기기에서 설정을 저장했어요. 새 설정으로 다시 시작해 주세요. 저장한 테스트 기록은 그대로 보관돼요.</p>${btn('새 설정으로 다시 시작','restart','','primary')}</section>`:s.paused?`<section class="lab-question lab-paused"><span aria-hidden="true">☁️</span><h1>잠깐 쉬어 가요</h1><p>소리와 AI 연결을 멈췄어요. 준비되면 이어서 해요.</p>${btn('계속하기','pause','','primary')}</section>`:`${lesson.id==='english-conversation'?this.renderCoach():''}<section class="lab-question" ${q.kind==='practice'?`data-practice-mode="${q.mode}"`:''} aria-labelledby="lab-question-title"><span class="lab-eyebrow">${q.kind==='practice'&&q.mode==='conversation'?'시나리오 미리보기 · 고정 검수 콘텐츠':q.context==='changed'?'새로운 상황에 써 보기':q.context==='symbolic'?'기호와 생각 연결하기':'함께 생각하는 한 단계'}</span><h1 id="lab-question-title">${e(q.prompt)}</h1>${q.kind==='practice'?this.renderPractice(q,s):q.visual?this.renderStepVisual(q,s):''}${q.kind==='number'?this.renderNumber(q,s):q.kind==='choice'?`<div class="lab-choices">${q.options.map(o=>btn(o.label,'choice',`data-option-id="${e(o.id)}"`,'choice',!!s.pending)).join('')}</div>`:''}${s.hint?`<p class="lab-hint">💡 ${e(q.hint)}</p>`:''}${s.revealed&&q.kind!=='practice'?`<div class="lab-model">함께 보는 답 <strong>${e(q.answer)}</strong><p>${e(q.explanation)}</p></div>`:''}<div class="lab-feedback" role="status">${e(s.feedback||'서두르지 않아도 괜찮아요. 필요하면 도움을 선택해요.')}</div>${s.pending?btn(s.index+1===total?'활동 마치고 기록하기':'다음 단계 →','next','','primary'):`<div class="lab-actions">${btn('💡 힌트','hint','','quiet')}${btn(q.kind==='practice'?'글자·모델 함께 보기':'풀이 함께 보기','model','','quiet')}${q.kind!=='practice'&&(s.hint||s.revealed)?btn('다시 연습으로 기록하고 넘어가기','review','','quiet'):''}</div>`}</section>`}</div>`;
  }
