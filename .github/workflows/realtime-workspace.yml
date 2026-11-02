@@ -1,0 +1,30 @@
+name: Realtime verification workspace
+on:
+  push:
+    branches: [work/realtime-voice-20261102]
+    paths: [.github/workflows/realtime-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run typecheck && npm test
+      - name: Package tracked sources and pinned compiler (no credentials)
+        run: |
+          mkdir -p /tmp/realtime-workspace
+          git archive --format=tar HEAD -o /tmp/realtime-workspace/source.tar
+          tar -czf /tmp/realtime-workspace/compiler.tar.gz node_modules/typescript node_modules/.bin/tsc node_modules/.bin/tsserver
+      - uses: actions/upload-artifact@v4
+        with:
+          name: realtime-workspace
+          path: /tmp/realtime-workspace/
+          retention-days: 1
