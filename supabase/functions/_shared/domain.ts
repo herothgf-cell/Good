@@ -8,29 +8,31 @@ export interface Reward {
   cost: number; stock: number | null; active: boolean; shop: boolean; gacha: boolean; version: number; durationMinutes?: number | null;
 }
 export interface Box { title: string; cost: number; dailyLimit: number; version: number; items: { rewardId: string; weight: number }[] }
-export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; reversed: boolean; ruleId?: string; learningRunId?: string }
+export interface Praise { id: string; actorId: string; actorName: string; stars: number; category: string; reason: string; createdAt: string; praiseDate?: string; reversed: boolean; ruleId?: string; learningRunId?: string }
 export interface Ledger { id: string; kind: 'praise' | 'reversal' | 'purchase' | 'draw' | 'grant' | 'gift' | 'revoke'; delta: number; balance: number; reason: string; actorId: string; actorName: string; createdAt: string; refId: string }
 export type CouponStatus = 'available' | 'requested' | 'approved' | 'used' | 'revoked';
 export interface CouponUsage { id: string; minutes: number; usedAt: string; actorId: string; actorName: string }
 export interface Coupon { durationMinutes?: number | null; remainingMinutes?: number; requestedMinutes?: number; usageVersion?: number; usageHistory?: CouponUsage[]; id: string; rewardId: string; title: string; description: string; icon: string; source: 'shop' | 'draw' | 'gift'; grantedById?: string; grantedByName?: string; grantReason?: string; stockConsumed?: boolean; status: CouponStatus; createdAt: string; requestedAt?: string; approvedAt?: string; usedAt?: string; note?: string; revokedAt?: string; revokedBy?: string; revokeReason?: string }
 export interface Draw { id: string; cost: number; couponId: string; rewardId: string; boxTitle: string; day: string; createdAt: string; odds: { rewardId: string; title: string; probability: number }[] }
-export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number}
+export interface PraiseRule {id:string;title:string;description:string;icon:string;stars:number;dailyLimit:number;active:boolean;featured:boolean;version:number;deleted?:boolean;deletedAt?:string}
 export interface State {
   schema: 1; familyName: string; childName: string; balance: number; lifetimeEarned: number; goalRewardId: string | null;
-  praiseRules?: PraiseRule[]; readPraiseIds?: string[]; gachaEnabled?: boolean; learning?: LearningState; learningLab?: LearningLabState;
+  praiseRules?: PraiseRule[]; praiseRulesVersion?: number; readPraiseIds?: string[]; gachaEnabled?: boolean; learning?: LearningState; learningLab?: LearningLabState;
   rewards: Reward[]; box: Box; praises: Praise[]; ledger: Ledger[]; inventory: Coupon[]; draws: Draw[];
 }
 export type Action =
   | LearningAction
   | LearningLabAction
   | {type:'rule/save';rule:Omit<PraiseRule,'version'>&{version?:number}}
-  | {type:'praise/rule';ruleId:string;version:number}
+  | {type:'rule/delete';ruleId:string;version:number;listVersion:number}
+  | {type:'rule/reorder';ruleIds:string[];version:number}
+  | {type:'praise/rule';ruleId:string;version:number;praiseDate?:string}
   | {type:'letters/read';ids:string[]}
   | {type:'stars/reverse';id:string;reason:string}
   | {type:'coupon/revoke';id:string;reason:string;usageVersion?:number}
   | {type: 'stars/grant'; stars: number; reason: string}
   | {type: 'reward/grant'; rewardId: string; version: number; reason: string; quantity?: number; minutes?: number}
-  | {type: 'praise/give'; stars: number; category: string; reason: string}
+  | {type: 'praise/give'; stars: number; category: string; reason: string; praiseDate?: string}
   | {type: 'praise/reverse'; id: string; reason: string}
   | {type: 'reward/save'; reward: Omit<Reward, 'version'> & {version?: number}}
   | {type: 'box/save'; box: Omit<Box, 'version'>}
@@ -167,6 +169,7 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
   switch (action.type) {
     case 'learning-lab/save-settings':
     case 'learning-lab/complete-preview':
+    case 'learning-lab/reserve-reading':
     case 'learning-lab/reserve-coach-turn': {
       result=applyLearningLabAction(s,action,ctx);break;
     }
@@ -189,25 +192,48 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       allow(ctx.actor,['admin']);
       if(!action.rule||typeof action.rule!=='object')fail('INVALID_INPUT','칭찬 행동을 확인해 주세요.');
       const incoming=action.rule;
-      const rules=structuredClone(rulesFor(s));
+      const rules=structuredClone(allPraiseRules(s));
       const id=text(incoming.id,'행동 ID',80);
       const index=rules.findIndex(r=>r.id===id);
-      if(index<0&&rules.length>=30)fail('LIMIT','칭찬 행동은 최대 30개까지 등록해 주세요.');
+      if(index>=0&&rules[index]!.deleted)fail('RULE_DELETED','삭제한 행동이에요. 새 행동으로 추가해 주세요.');
+      if(index<0&&rules.filter(r=>!r.deleted).length>=30)fail('LIMIT','칭찬 행동은 최대 30개까지 등록해 주세요.');
       if(index>=0&&incoming.version!==rules[index]!.version)fail('QUOTE_CHANGED','행동 설정이 바뀌었어요. 다시 열어 주세요.');
       integer(incoming.stars,1,3,'칭찬 별은 1~3개의 정수로 정해 주세요.');
       integer(incoming.dailyLimit,1,10,'하루 횟수는 1~10회의 정수로 정해 주세요.');
       if(typeof incoming.active!=='boolean'||typeof incoming.featured!=='boolean')fail('INVALID_INPUT','공개 설정을 확인해 주세요.');
       const rule: PraiseRule={id,title:text(incoming.title,'행동 이름',60),description:text(incoming.description,'행동 설명',180,true),icon:text(incoming.icon,'아이콘',12),stars:incoming.stars,dailyLimit:incoming.dailyLimit,active:incoming.active,featured:incoming.featured,version:index<0?1:rules[index]!.version+1};
       if(index<0)rules.push(rule);else rules[index]=rule;
-      s.praiseRules=rules;result={message:'별 받는 행동을 저장했어요.'};break;
+      s.praiseRules=rules;bumpRulesVersion(s);result={message:'별 받는 행동을 저장했어요.'};break;
+    }
+    case 'rule/delete': {
+      allow(ctx.actor,['admin']);
+      checkRulesVersion(s,action.listVersion);
+      const id=text(action.ruleId,'행동 ID',80),rules=structuredClone(allPraiseRules(s));
+      const rule=rules.find(r=>r.id===id&&!r.deleted);
+      if(!rule)fail('NOT_FOUND','이미 삭제했거나 없는 행동이에요.');
+      if(action.version!==rule.version)fail('QUOTE_CHANGED','행동 설정이 바뀌었어요. 최신 목록을 확인해 주세요.');
+      rule.deleted=true;rule.deletedAt=ctx.now;rule.active=false;rule.version++;
+      s.praiseRules=rules;bumpRulesVersion(s);
+      result={message:'행동을 삭제했어요. 이전 칭찬 편지와 별 기록은 그대로 남아요.'};break;
+    }
+    case 'rule/reorder': {
+      allow(ctx.actor,['admin']);
+      checkRulesVersion(s,action.version);
+      const rules=allPraiseRules(s),visible=rules.filter(r=>!r.deleted),ids=action.ruleIds;
+      if(!Array.isArray(ids)||ids.length!==visible.length||ids.length>30||new Set(ids).size!==ids.length||
+        ids.some(id=>typeof id!=='string'||!visible.some(r=>r.id===id)))
+        fail('INVALID_INPUT','현재 행동을 중복이나 누락 없이 순서대로 보내 주세요.');
+      s.praiseRules=[...ids.map(id=>({...visible.find(r=>r.id===id)!})),...rules.filter(r=>r.deleted)];
+      bumpRulesVersion(s);result={message:'행동 순서를 저장했어요. 아이 화면에도 같은 순서로 반영돼요.'};break;
     }
     case 'praise/rule': {
       allow(ctx.actor,['admin','giver']);
       const rule=rulesFor(s).find(r=>r.id===action.ruleId&&r.active);
       if(!rule)fail('NOT_FOUND','현재 사용할 수 없는 칭찬 행동이에요.');
       if(rule.version!==action.version)fail('QUOTE_CHANGED','행동 설정이 바뀌었어요. 다시 확인해 주세요.');
-      if(ruleGivesToday(s,rule.id,ctx.now)>=rule.dailyLimit)fail('DAILY_LIMIT','이 행동은 오늘 정한 만큼 칭찬했어요. 다른 노력을 칭찬해 주세요.');
-      const praise:Praise={id:ctx.newId(),actorId:ctx.actor.id,actorName:ctx.actor.name,stars:rule.stars,category:'우리 약속',reason:rule.title,createdAt:ctx.now,reversed:false,ruleId:rule.id};
+      const praiseDate=validatePraiseDate(action.praiseDate,ctx.now);
+      if(ruleGivesOn(s,rule.id,praiseDate)>=rule.dailyLimit)fail('DAILY_LIMIT','이 행동은 선택한 날짜에 정한 만큼 칭찬했어요. 날짜와 기록을 확인해 주세요.');
+      const praise:Praise={id:ctx.newId(),actorId:ctx.actor.id,actorName:ctx.actor.name,stars:rule.stars,category:'우리 약속',reason:rule.title,createdAt:ctx.now,praiseDate,reversed:false,ruleId:rule.id};
       appendLedger(s,ctx,'praise',rule.stars,rule.title,praise.id);
       s.praises.push(praise);s.lifetimeEarned+=rule.stars;
       result={message:`칭찬 별 ${rule.stars}개와 편지를 보냈어요!`,praiseId:praise.id};break;
@@ -286,7 +312,8 @@ export function applyAction(original: State, input: unknown, ctx: Context): Tran
       allow(ctx.actor,['admin','giver']);
       integer(action.stars,1,3,'칭찬 별은 1~3개의 정수로 골라 주세요.');
       const reason = text(action.reason,'칭찬 내용',180);
-      const praise: Praise = {id:ctx.newId(),actorId:ctx.actor.id,actorName:ctx.actor.name,stars:action.stars,category:text(action.category,'칭찬 종류',20),reason,createdAt:ctx.now,reversed:false};
+      const praiseDate=validatePraiseDate(action.praiseDate,ctx.now);
+      const praise: Praise = {id:ctx.newId(),actorId:ctx.actor.id,actorName:ctx.actor.name,stars:action.stars,category:text(action.category,'칭찬 종류',20),reason,createdAt:ctx.now,praiseDate,reversed:false};
       appendLedger(s,ctx,'praise',action.stars,reason,praise.id);
       s.praises.push(praise); s.lifetimeEarned += action.stars;
       result = {message:`칭찬 별 ${action.stars}개를 붙여줬어요!`,praiseId:praise.id}; break;
@@ -455,6 +482,31 @@ export function defaultPraiseRules():PraiseRule[]{return [
   ['share','🤝','함께 배려하기','차례를 기다리거나 함께 나눠요.'],
   ['practice','⚽','즐겁게 연습하기','운동이나 새로운 활동에 도전해요.']
 ].map(([id,icon,title,description],i)=>({id:'rule-'+id,icon:icon!,title:title!,description:description!,stars:1,dailyLimit:1,active:true,featured:i<3,version:1}));}
-export function rulesFor(s:State):PraiseRule[]{return s.praiseRules??defaultPraiseRules();}
-export function ruleGivesToday(s:State,id:string,now:string):number{return s.praises.filter(p=>!p.reversed&&p.ruleId===id&&dayKey(p.createdAt)===dayKey(now)).length;}
+function allPraiseRules(s:State):PraiseRule[]{return s.praiseRules??defaultPraiseRules();}
+export function rulesFor(s:State):PraiseRule[]{return allPraiseRules(s).filter(r=>!r.deleted);}
+export function rulesVersion(s:State):number{return s.praiseRulesVersion??0;}
+function checkRulesVersion(s:State,value:unknown):void {
+  integer(value,0,Number.MAX_SAFE_INTEGER,'행동 목록 버전을 확인해 주세요.');
+  if(value!==rulesVersion(s))fail('QUOTE_CHANGED','다른 기기에서 행동 목록을 바꿨어요. 최신 목록을 확인해 주세요.');
+}
+function bumpRulesVersion(s:State):void {
+  const version=rulesVersion(s);
+  if(!Number.isSafeInteger(version)||version>=Number.MAX_SAFE_INTEGER)fail('LIMIT','행동 목록 버전 한도에 도달했어요.');
+  s.praiseRulesVersion=version+1;
+}
+/** Date of the praised behavior, deliberately independent of immutable issuance time. */
+export function praiseDateFor(p:Praise):string{return p.praiseDate??dayKey(p.createdAt);}
+export function validatePraiseDate(value:unknown,now:string):string {
+  if(value===undefined)return dayKey(now);
+  if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||value.startsWith('0000'))
+    fail('INVALID_INPUT','칭찬일자를 올바른 날짜로 선택해 주세요.');
+  const parsed=new Date(`${value}T00:00:00.000Z`);
+  if(!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==value||value>dayKey(now))
+    fail('INVALID_INPUT','칭찬일자는 오늘까지의 실제 날짜로 선택해 주세요.');
+  return value;
+}
+export function ruleGivesOn(s:State,id:string,date:string):number{return s.praises.filter(p=>!p.reversed&&p.ruleId===id&&praiseDateFor(p)===date).length;}
+export function ruleGivesToday(s:State,id:string,now:string):number{return ruleGivesOn(s,id,dayKey(now));}
 export function unreadPraises(s:State):Praise[]{const read=new Set(s.readPraiseIds??[]);return s.praises.filter(p=>!p.reversed&&!read.has(p.id));}
+
+export function archivedPraises(s:State):Praise[]{const read=new Set(s.readPraiseIds??[]);return s.praises.filter(p=>!p.reversed&&read.has(p.id));}

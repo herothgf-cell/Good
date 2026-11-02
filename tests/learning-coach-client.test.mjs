@@ -45,7 +45,7 @@ test('unavailable connection and failed turn never fabricate responses or retry'
   assert.equal(unavailable.calls.length,1);assert.equal(unavailable.coach.view().messages.length,0);
   const failed=boot(async body=>{if(body.operation==='status')return {available:true};throw Error('connection lost');});
   await failed.coach.check();await failed.coach.sendText('hello','play');assert.equal(failed.calls.length,2);
-  assert.equal(failed.coach.view().phase,'error');assert.equal(failed.coach.view().messages.length,0);
+  assert.equal(failed.coach.view().phase,'error');assert.equal(failed.coach.view().messages.length,1);assert.equal(failed.coach.view().messages[0].role,'user');assert.equal(failed.coach.view().messages[0].status,'failed');
   assert.equal(failed.coach.view().turns,1);failed.coach.leave();
 });
 test('microphone permission resolving after leave releases every track without recording',async()=>{
@@ -59,49 +59,35 @@ test('microphone permission resolving after leave releases every track without r
   }finally{if(old)Object.defineProperty(globalThis,'navigator',old);else delete globalThis.navigator;globalThis.MediaRecorder=oldRecorder;}
 });
 
+function generatedAudio(){const b=Buffer.alloc(48);b.write('RIFF');b.write('WAVE',8);return {mime:'audio/wav',base64:b.toString('base64'),transcript:'Do you like soccer?'};}
 async function withSpeech(t,run){
-  const descriptors=new Map(['speechSynthesis','SpeechSynthesisUtterance'].map(name=>[name,Object.getOwnPropertyDescriptor(globalThis,name)]));
-  const utterances=[];const timers=new Map();const setTimer=globalThis.setTimeout,clearTimer=globalThis.clearTimeout;
-  t.mock.method(globalThis,'setTimeout',(callback,delay,...args)=>{
-    if(delay!==20000)return setTimer(callback,delay,...args);
-    const id=Symbol('speech timeout');timers.set(id,{callback,delay});return id;
-  });
-  t.mock.method(globalThis,'clearTimeout',id=>{if(!timers.delete(id))clearTimer(id);});
-  Object.defineProperty(globalThis,'SpeechSynthesisUtterance',{configurable:true,value:class {constructor(text){this.text=text;}}});
-  Object.defineProperty(globalThis,'speechSynthesis',{configurable:true,value:{
-    getVoices:()=>[{localService:true,lang:'en-US'}],cancel:()=>{},speak:utterance=>utterances.push(utterance),
-  }});
-  const expire=()=>{
-    assert.equal(timers.size,1,'the active speech must retain its timeout');
-    const [id,timer]=timers.entries().next().value;
-    assert.equal(timer.delay,20000);timers.delete(id);timer.callback();
-  };
-  try{await run({utterances,timers,expire});}
-  finally{for(const [name,descriptor] of descriptors){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];}}
+ const descriptor=Object.getOwnPropertyDescriptor(globalThis,'Audio');
+ const utterances=[];const timers=new Map();const setTimer=globalThis.setTimeout,clearTimer=globalThis.clearTimeout;
+ t.mock.method(globalThis,'setTimeout',(callback,delay,...args)=>{
+  if(delay!==45000)return setTimer(callback,delay,...args);
+  const id=Symbol('audio timeout');timers.set(id,{callback,delay});return id;
+ });
+ t.mock.method(globalThis,'clearTimeout',id=>{if(!timers.delete(id))clearTimer(id);});
+ Object.defineProperty(globalThis,'Audio',{configurable:true,value:class {
+  constructor(){utterances.push(this);} async play(){} pause(){} removeAttribute(){} load(){} currentTime=0;onended=null;onerror=null;
+ }});
+ const expire=()=>{assert.equal(timers.size,1,'the active audio must retain its timeout');const [id,timer]=timers.entries().next().value;assert.equal(timer.delay,45000);timers.delete(id);timer.callback();};
+ try{await run({utterances,timers,expire});}finally{if(descriptor)Object.defineProperty(globalThis,'Audio',descriptor);else delete globalThis.Audio;}
 }
-
-for(const finish of ['timeout','onend','onerror','leave'])for(const late of ['onend','onerror']){
-  test(`speech ${late} after ${finish} cannot unlock the next utterance or clear its timeout`,async t=>{
-    await withSpeech(t,async({utterances,timers,expire})=>{
-      const b=boot();
-      try{
-        await b.coach.check();await b.coach.sendText('First turn.','play');
-        assert.equal(b.coach.view().phase,'speaking');
-        const old=utterances[0],lateCallback=old[late];
-        if(finish==='timeout')expire();
-        else if(finish==='leave'){b.coach.leave();await b.coach.check();}
-        else old[finish]();
-        assert.equal(b.coach.view().phase,'ready');
-        assert.equal(timers.size,0,'completed speech must release its timeout');
-        await b.coach.sendText('Next turn.','play');
-        const speaking=b.coach.view();assert.equal(speaking.phase,'speaking');
-        lateCallback();
-        assert.deepEqual(b.coach.view(),speaking,'stale speech must leave the active dialogue and status intact');
-        const calls=b.calls.length;await b.coach.sendText('Must wait.','play');
-        assert.equal(b.calls.length,calls,'the next turn must remain blocked while audio is speaking');
-        expire();assert.equal(b.coach.view().phase,'ready');
-        assert.equal(timers.size,0);
-      }finally{b.coach.leave();}
-    });
+for(const finish of ['timeout','onended','onerror','leave'])for(const late of ['onended','onerror']){
+ test(`generated audio ${late} after ${finish} cannot unlock the next reply or clear its timeout`,async t=>{
+  await withSpeech(t,async({utterances,timers,expire})=>{
+   const b=boot(async body=>body.operation==='status'?{available:true}:{transcript:body.text,reply:'Do you like soccer?',speech:'Do you like soccer?',audio:generatedAudio()});
+   try{
+    await b.coach.check();await b.coach.sendText('First turn.','play');assert.equal(b.coach.view().phase,'speaking');
+    const old=utterances[0],lateCallback=old[late];
+    if(finish==='timeout')expire();else if(finish==='leave'){b.coach.leave();await b.coach.check();}else old[finish]();
+    assert.equal(b.coach.view().phase,'ready');assert.equal(timers.size,0,'completed audio must release its timeout');
+    await b.coach.sendText('Next turn.','play');const speaking=b.coach.view();assert.equal(speaking.phase,'speaking');
+    lateCallback();assert.deepEqual(b.coach.view(),speaking,'stale playback must leave active dialogue intact');
+    const calls=b.calls.length;await b.coach.sendText('Must wait.','play');assert.equal(b.calls.length,calls);
+    expire();assert.equal(b.coach.view().phase,'ready');assert.equal(timers.size,0);
+   }finally{b.coach.leave();}
   });
+ });
 }
