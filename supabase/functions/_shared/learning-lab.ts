@@ -1,5 +1,5 @@
 import {DomainError,dayKey,type State,type Context,type Result} from './domain.ts';
-import {LAB_CONTENT_VERSION,LAB_CATALOG,DEFAULT_LAB_SETTINGS,validateLabSettings,buildLabLesson,evaluateLabAnswers,normalizeLabAnswer,
+import {LAB_CONTENT_VERSION,LAB_CATALOG,DEFAULT_LAB_SETTINGS,validateLabSettings,buildLabLesson,evaluateLabAnswers,normalizeLabAnswer,normalizeSpelling,
   type LabLessonId,type LabSettings,type LabAnswer,type LabEvaluation,type LabSkillResult,type LabLesson} from './learning-lab-content.ts';
 
 export interface LabRun extends LabEvaluation {
@@ -10,10 +10,11 @@ export interface LabRun extends LabEvaluation {
 }
 export interface LabProgress extends LabSkillResult {lastSeen:string;lastOutcome:'independent'|'supported'|'review';}
 export interface LabVoiceUsage {day:string;turns:number;sessions:Record<string,{actorId:string;turns:number;startedAt:string}>;}
-export interface LearningLabState {settings:LabSettings;settingsVersion:number;previews:LabRun[];previewProgress:Record<string,LabProgress>;voiceUsage?:LabVoiceUsage;}
+export interface LearningLabState {settings:LabSettings;settingsVersion:number;previews:LabRun[];previewProgress:Record<string,LabProgress>;voiceUsage?:LabVoiceUsage;speechUsage?:{day:string;requests:number};}
 export type LearningLabAction =
   | {type:'learning-lab/save-settings';settings:LabSettings;version:number}
   | {type:'learning-lab/complete-preview';runId:string;lessonId:LabLessonId;contentVersion:string;settingsVersion:number;settings:LabSettings;seed:number;answers:LabAnswer[]}
+  | {type:'learning-lab/reserve-reading';turnId:string}
   | {type:'learning-lab/reserve-coach-turn';sessionId:string;turnId:string};
 
 /** No implicit state migration or publication; callers receive an isolated snapshot. */
@@ -33,7 +34,7 @@ function settingsFor(value:unknown):LabSettings {
   catch{fail('INVALID_INPUT','학습 설정의 항목과 범위를 확인해 주세요.');}
 }
 function settingsKey(settings:LabSettings):string {
-  return JSON.stringify(Object.keys(DEFAULT_LAB_SETTINGS).sort().map(key=>[key,settings[key as keyof LabSettings]]));
+  return JSON.stringify(Object.keys(DEFAULT_LAB_SETTINGS).sort().map(key=>[key,validateLabSettings(settings)[key as keyof LabSettings]]));
 }
 function savedResult(run:LabRun):Result {return {message:'보호자 학습 테스트를 저장했어요. 별은 지급하지 않아요.',learningRunId:run.id};}
 
@@ -68,7 +69,7 @@ function completionKey(action:Extract<LearningLabAction,{type:'learning-lab/comp
       }else{
         // Only recognized bounded number/time/date syntax can enter a comparison key.
         // The normalizer accepts reviewed unit spellings, never general prose.
-        try{value=normalizeLabAnswer(answer.value,step.format);}catch{fail('INVALID_INPUT','학습 답의 형식을 확인해 주세요.');}
+        try{value=step.kind==='spelling'?normalizeSpelling(answer.value):normalizeLabAnswer(answer.value,step.format);}catch{fail('INVALID_INPUT','학습 답의 형식을 확인해 주세요.');}
         if(!value)fail('INVALID_INPUT','숫자·시각·날짜 형식으로 입력해 주세요.');
       }
     }
@@ -84,7 +85,7 @@ function aggregate(learning:LearningLabState,evaluation:LabEvaluation,now:string
     // Skill IDs are server content IDs, never supplied by the client.
     if(!/^[a-z][a-z0-9.-]{0,79}$/.test(skill.skillId))fail('INVALID_INPUT','학습 기술 정보를 확인해 주세요.');
     const previous=Object.prototype.hasOwnProperty.call(progress,skill.skillId)?progress[skill.skillId]:undefined;
-    if(!previous&&Object.keys(progress).length>=200)fail('LIMIT','학습 진도 항목 한도에 도달했어요.');
+    if(!previous&&Object.keys(progress).length>=400)fail('LIMIT','학습 진도 항목 한도에 도달했어요.');
     const totals={skillId:skill.skillId,independent:skill.independent+(previous?.independent??0),supported:skill.supported+(previous?.supported??0),
       review:skill.review+(previous?.review??0),observed:skill.observed+(previous?.observed??0)};
     if([totals.independent,totals.supported,totals.review,totals.observed].some(value=>!Number.isSafeInteger(value)||value<0))fail('LIMIT','학습 진도 집계 한도에 도달했어요.');
@@ -97,7 +98,7 @@ export function applyLearningLabAction(state:State,action:LearningLabAction,ctx:
   if(ctx.actor?.role!=='admin')fail('FORBIDDEN','이 작업을 할 권한이 없어요. 보호자에게 요청해 주세요.');
   const fields=action.type==='learning-lab/save-settings'?['type','settings','version']:
     action.type==='learning-lab/complete-preview'?['type','runId','lessonId','contentVersion','settingsVersion','settings','seed','answers']:
-    ['type','sessionId','turnId'];
+    action.type==='learning-lab/reserve-reading'?['type','turnId']:['type','sessionId','turnId'];
   if(Object.keys(action).some(key=>!fields.includes(key)))fail('INVALID_INPUT','학습 요청의 항목을 확인해 주세요.');
   const learning=learningLabFor(state),day=dayKey(ctx.now);
   switch(action.type){
@@ -134,6 +135,11 @@ export function applyLearningLabAction(state:State,action:LearningLabAction,ctx:
       learning.previews=[...learning.previews,run].slice(-40);
       state.learningLab=learning;
       return savedResult(run);
+    }
+    case 'learning-lab/reserve-reading': {
+      uuid(action.turnId);const previous=learning.speechUsage;const requests=previous?.day===day?previous.requests:0;
+      if(!Number.isSafeInteger(requests)||requests<0||requests>=120)fail('DAILY_LIMIT','오늘 AI 읽어주기 120회를 모두 사용했어요. 이미 들은 음성은 같은 화면에서 다시 들을 수 있어요.');
+      learning.speechUsage={day,requests:requests+1};state.learningLab=learning;return {message:'AI 읽어주기 1회를 예약했어요.',coachReservationId:ctx.newId()};
     }
     case 'learning-lab/reserve-coach-turn': {
       uuid(action.sessionId);uuid(action.turnId);

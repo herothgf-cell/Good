@@ -14,10 +14,10 @@ const complete = lesson => lesson.steps.map(step => step.kind === 'practice'
   : {stepId:step.id, value:step.answer, attempts:1, help:'none'});
 
 // Removing bounded generation, strict validation or outcome separation must fail these behavioural assertions.
-test('catalog and defensive settings expose exactly the reviewed nine activities', () => {
-  assert.equal(content.LAB_CONTENT_VERSION, '2026-11-01.1');
-  assert.deepEqual(content.LAB_CATALOG.map(item => item.id), ids);
-  assert.deepEqual(settings(), {topic:'play',phonics:'ai-ay',conversationSupport:'guided',addition:'mixed',subtraction:'mixed',moneyUnit:1000,clockLevel:1,calendarLevel:1,groupSize:2,patternLevel:1});
+test('catalog preserves legacy content and adds the integrated source course', () => {
+  assert.equal(content.LAB_CONTENT_VERSION, '2026-11-02.2');
+  assert.deepEqual(content.LAB_CATALOG.map(item => item.id), ['english-conversation','english-phonics',...ids.slice(1)]);
+  assert.deepEqual(settings(), {topic:'play',phonicsUnit:'01',phonics:'ai-ay',conversationSupport:'guided',addition:'mixed',subtraction:'mixed',moneyUnit:1000,clockLevel:1,calendarLevel:1,groupSize:2,patternLevel:1});
   const clean = content.validateLabSettings(settings());
   assert.deepEqual(clean, settings());
   assert.notEqual(clean, content.DEFAULT_LAB_SETTINGS);
@@ -209,7 +209,7 @@ test('conversation is a varied topic-specific scenario preview with clear suppor
   const targets = [];
   for (const topic of ['play','shop','build']) {
     const lesson = build('english-conversation', {topic});
-    assert.match(`${lesson.title} ${lesson.description}`, /시나리오/);
+    assert.match(`${lesson.title} ${lesson.description}`, /글·음성/);
     assert.ok(!`${lesson.title} ${lesson.description}`.includes('실시간'));
     assert.ok(lesson.steps.every(s => s.kind === 'practice' && s.mode === 'conversation'));
     assert.ok(lesson.steps.every(s => s.cue.includes('한국어')));

@@ -78,3 +78,14 @@ Vercel은 `vercel.json`의 Other / `npm run build` / `dist` 설정을 사용합�
 - [이번 작업 계획](docs/superpowers/plans/2026-10-26-good-repository.md)
 
 아직 포함하지 않은 기능: QR 초대, 보상 사진, 주간 사용 제한, 천장, 알림, 다자녀, JSON 복원 UI. 실제 기기 간 공유·동시 거래와 iPhone/Android 설치는 서버 배포 후 별도로 검증해야 합니다.
+
+## 통합 영어 v0.10 (적용 준비된 변경)
+
+- 기존 채팅 화면에서 같은 답변을 글과 AI 생성 음성으로 제공합니다.
+- 단어 회상과 문장 읽기를 `파닉스 · 듣고 읽고 쓰기`로 통합합니다.
+- 제공된 **15분 파닉스**의 22개 단원 순서와 출처를 유지합니다.
+- [통합 영어 사용·배포 안내](docs/technical/LEARNING_INTEGRATED_ENGLISH.md)
+- [원자료 대응표](docs/references/PHONICS_15MIN.md)
+- [검증 및 남은 확인](docs/verification/INTEGRATED_ENGLISH_REVIEW.md)
+
+현재 작업 패키지는 로컬 검증본입니다. GitHub와 Supabase 운영 반영은 별도 배포 단계이며, 문서만으로 배포 완료를 뜻하지 않습니다.

@@ -1,3 +1,5 @@
+import {createNarrator} from '../_server/narration.js';
+import {resolvePhonicsAudio} from '../_shared/phonics-curriculum.ts';
 import {loadServerConfig} from '../_server/config.js';
 import {createCoachHandler,createOpenAICoach} from '../_server/coach.js';
 import {processCommand,type CommandStore,type CommitData,type Loaded,type Receipt} from '../_shared/service.ts';
@@ -30,19 +32,21 @@ const store:CommandStore={
     p_payload:c.action,p_expected_revision:c.revision,p_state:c.state,p_result:c.result});}
 };
 
+const narrate=createNarrator({apiKey,model:Deno.env.get('LEARNING_SPEECH_MODEL')||'gpt-audio-1.5'});
 Deno.serve(createCoachHandler({
+  narrate,readingText:resolvePhonicsAudio,
   origin:config.origin,configured,member,
   async verify(bearer){
     const response=await fetch(`${config.url}/auth/v1/user`,{headers:{apikey:config.publicKey,Authorization:bearer},signal:AbortSignal.timeout(10000)});
     if(!response.ok)return null;const user=await response.json();return typeof user.id==='string'?user.id:null;
   },
-  async reserve({familyId,userId,sessionId,turnId}){
+  async reserve({familyId,userId,sessionId,turnId,kind}){
     // Unique server nonce distinguishes the winning commit even when family_commit
     // returns a previous receipt to simultaneous duplicate callers.
     const nonce=crypto.randomUUID();
-    const committed=await processCommand({familyId,requestId:turnId,action:{type:'learning-lab/reserve-coach-turn',sessionId,turnId}},userId,store,
+    const committed=await processCommand({familyId,requestId:turnId,action:kind==='read'?{type:'learning-lab/reserve-reading',turnId}:{type:'learning-lab/reserve-coach-turn',sessionId,turnId}},userId,store,
       {now:()=>new Date().toISOString(),newId:()=>nonce,random:()=>0});
     return committed.result.coachReservationId===nonce;
   },
-  respond:createOpenAICoach({apiKey,chatModel:Deno.env.get('LEARNING_COACH_CHAT_MODEL')||'gpt-4.1-mini',transcribeModel:Deno.env.get('LEARNING_COACH_TRANSCRIBE_MODEL')||'gpt-transcribe'})
+  respond:createOpenAICoach({apiKey,chatModel:Deno.env.get('LEARNING_COACH_CHAT_MODEL')||'gpt-4.1-mini',transcribeModel:Deno.env.get('LEARNING_COACH_TRANSCRIBE_MODEL')||'gpt-transcribe'},fetch,narrate)
 }));
