@@ -19,8 +19,9 @@ async function readBody(request) {
   try{return JSON.parse(new TextDecoder().decode(all));}catch{throw invalid();}
 }
 function validateInput(body) {
-  if(!record(body)||!uuid(body.familyId)||!['status','turn'].includes(body.operation))throw invalid();
+  if(!record(body)||!uuid(body.familyId)||!['status','turn','read'].includes(body.operation))throw invalid();
   if(body.operation==='status'){if(!exact(body,['operation','familyId']))throw invalid();return body;}
+  if(body.operation==='read'){if(!exact(body,['operation','familyId','sessionId','turnId','adultTest','unitId','itemId'])||!uuid(body.sessionId)||!uuid(body.turnId)||body.adultTest!==true||!text(body.unitId,32)||!text(body.itemId,32))throw invalid();return body;}
   if(!exact(body,['operation','familyId','sessionId','turnId','adultTest','topic','text','audio','history'])||
       !uuid(body.sessionId)||!uuid(body.turnId)||body.adultTest!==true||!['play','shop','build'].includes(body.topic)||
       !Array.isArray(body.history)||body.history.length>8)throw invalid();
@@ -54,9 +55,13 @@ export function createCoachHandler(deps) {
         message:deps.configured?'보호자 목소리로 연결을 시험할 수 있어요.':'AI 서버 연결을 준비 중이에요. 문장·단어·읽기 연습은 지금 테스트할 수 있어요.'});
       if(!deps.configured)return json({error:'AI 연결 설정이 아직 준비되지 않았어요.',code:'NOT_CONFIGURED'},503);
       if(request.signal.aborted)return json({error:'중단된 요청이에요.'},499);
-      const fresh=await deps.reserve({familyId:body.familyId,userId,sessionId:body.sessionId,turnId:body.turnId});
+      const reading=body.operation==='read'?deps.readingText?.(body.unitId,body.itemId):null;
+      if(body.operation==='read'&&(!reading||!deps.narrate))throw invalid();
+      const fresh=await deps.reserve({familyId:body.familyId,userId,sessionId:body.sessionId,turnId:body.turnId,...(body.operation==='read'?{kind:'read'}:{})});
       if(!fresh)return json({error:'이미 접수한 대화예요. 비용 중복을 막기 위해 자동으로 다시 전송하지 않았어요.',code:'ALREADY_RESERVED'},409);
-      const result=await deps.respond(body,AbortSignal.any([request.signal,AbortSignal.timeout(50000)]));
+      const signal=AbortSignal.any([request.signal,AbortSignal.timeout(50000)]);
+      if(body.operation==='read')return json({speech:reading,audio:await deps.narrate(reading,signal)});
+      const result=await deps.respond(body,signal);
       return json(result);
     }catch(error){
       if(error instanceof CoachError)return json({error:error.message,code:error.code},error.status);
@@ -76,7 +81,7 @@ function validReply(value){
       value.reply.trim().split(/\s+/).length>40||value.modelPhrase.trim().split(/\s+/).length>16)throw new Error('INVALID_COACH_RESPONSE');
   return value;
 }
-export function createOpenAICoach(config,fetcher=fetch) {
+export function createOpenAICoach(config,fetcher=fetch,narrate) {
   const headers={Authorization:`Bearer ${config.apiKey}`};
   const provider=async(path,body,signal)=>{
     const multipart=body instanceof FormData;
@@ -101,8 +106,9 @@ export function createOpenAICoach(config,fetcher=fetch) {
       response_format:{type:'json_schema',json_schema:{name:'beginner_coach_turn',strict:true,schema}}},signal);
     let parsed;try{parsed=JSON.parse(result.choices?.[0]?.message?.content);}catch{throw new Error('INVALID_COACH_RESPONSE');}
     const reply=validReply(parsed);
-    // AI response is dynamic; speech is rendered by an installed English voice on the device.
-    // Do not introduce the retiring Speech API into a new integration.
-    return {transcript,...reply,speech:[reply.modelPhrase,reply.reply].filter(Boolean).join(' ')};
+    const speech=[reply.modelPhrase,reply.reply].filter(Boolean).join(' ');
+    const output={transcript,...reply,speech};
+    if(narrate){try{output.audio=await narrate(speech,signal);}catch{output.audioError='AUDIO_UNAVAILABLE';}}
+    return output;
   };
 }

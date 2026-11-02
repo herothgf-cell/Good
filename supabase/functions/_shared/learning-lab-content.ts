@@ -1,15 +1,16 @@
+import {PHONICS_UNITS,buildPhonicsSteps} from './phonics-curriculum.ts';
 /** Reviewed, deterministic guardian-preview curriculum. No transcripts or rewards. */
-export const LAB_CONTENT_VERSION = '2026-11-01.1';
-export type LabLessonId = 'english-conversation'|'english-words'|'english-reading'|'math-calculation'|'math-transfer'|'math-clock'|'math-calendar'|'math-groups'|'math-patterns';
+export const LAB_CONTENT_VERSION = '2026-11-02.2';
+export type LabLessonId = 'english-conversation'|'english-phonics'|'english-words'|'english-reading'|'math-calculation'|'math-transfer'|'math-clock'|'math-calendar'|'math-groups'|'math-patterns';
 export type LabHelp = 'none'|'replay'|'hint'|'model';
 export interface LabSettings {
-  topic:'play'|'shop'|'build'; phonics:'ai-ay'|'silent-e'|'cvc'; conversationSupport:'guided'|'light';
+  phonicsUnit?:string; topic:'play'|'shop'|'build'; phonics:'ai-ay'|'silent-e'|'cvc'; conversationSupport:'guided'|'light';
   addition:'no-regroup'|'regroup'|'mixed'; subtraction:'no-regroup'|'regroup'|'mixed';
   moneyUnit:100|1000|10000; clockLevel:1|2|3; calendarLevel:1|2; groupSize:2|3; patternLevel:1|2;
 }
-export const DEFAULT_LAB_SETTINGS:LabSettings = Object.freeze({topic:'play',phonics:'ai-ay',conversationSupport:'guided',addition:'mixed',subtraction:'mixed',moneyUnit:1000,clockLevel:1,calendarLevel:1,groupSize:2,patternLevel:1});
+export const DEFAULT_LAB_SETTINGS:LabSettings = Object.freeze({phonicsUnit:'01',topic:'play',phonics:'ai-ay',conversationSupport:'guided',addition:'mixed',subtraction:'mixed',moneyUnit:1000,clockLevel:1,calendarLevel:1,groupSize:2,patternLevel:1});
 const SETTING_VALUES:Record<keyof LabSettings, readonly (string|number)[]> = {
-  topic:['play','shop','build'], phonics:['ai-ay','silent-e','cvc'], conversationSupport:['guided','light'],
+  phonicsUnit:PHONICS_UNITS.map(unit=>unit.id),topic:['play','shop','build'], phonics:['ai-ay','silent-e','cvc'], conversationSupport:['guided','light'],
   addition:['no-regroup','regroup','mixed'], subtraction:['no-regroup','regroup','mixed'],
   moneyUnit:[100,1000,10000], clockLevel:[1,2,3], calendarLevel:[1,2], groupSize:[2,3], patternLevel:[1,2],
 };
@@ -17,11 +18,12 @@ function record(value:unknown):value is Record<string,unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 }
 export function validateLabSettings(value:unknown):LabSettings {
-  if (!record(value) || Reflect.ownKeys(value).length !== Object.keys(SETTING_VALUES).length) throw new Error('학습 설정 형식이 올바르지 않아요.');
+  if (!record(value) || Reflect.ownKeys(value).some(k=>typeof k!=='string'||!Object.hasOwn(SETTING_VALUES,k))) throw new Error('학습 설정 형식이 올바르지 않아요.');
+  const normalized={...value,phonicsUnit:value.phonicsUnit??'01'};
   for (const key of Object.keys(SETTING_VALUES) as (keyof LabSettings)[]) {
-    if (!Object.hasOwn(value,key) || !SETTING_VALUES[key].includes(value[key] as string|number)) throw new Error(`학습 설정을 확인해 주세요: ${key}`);
+    if (!Object.hasOwn(normalized,key) || !SETTING_VALUES[key]!.includes((normalized as Record<string,unknown>)[key] as string|number)) throw new Error(`학습 설정을 확인해 주세요: ${key}`);
   }
-  return {...value} as unknown as LabSettings;
+  return normalized as unknown as LabSettings;
 }
 export type LabVisual =
  | {kind:'money';unit:number;counts:number[]}
@@ -32,14 +34,17 @@ export type LabVisual =
  | {kind:'bar';parts:(number|null)[];total:number|null;labels:string[]}
  | {kind:'sequence';items:(number|null)[]}
  | {kind:'word';icon:string;label:string};
-interface LabBaseStep {id:string;skillId:string;title:string;prompt:string;hint:string;explanation:string;visual?:LabVisual;context:'familiar'|'changed'|'symbolic';}
+export interface LabSource {title:string;origin:'source'|'supplement';pdfPages:number[];printedPages:number[];}
+interface LabBaseStep {readingKey?:string;source?:LabSource;id:string;skillId:string;title:string;prompt:string;hint:string;explanation:string;visual?:LabVisual;context:'familiar'|'changed'|'symbolic';}
 export interface LabNumberStep extends LabBaseStep {kind:'number';answer:string;format:'integer'|'time'|'date';}
 export interface LabChoiceStep extends LabBaseStep {kind:'choice';options:{id:string;label:string}[];answer:string;}
 export interface LabPracticeStep extends LabBaseStep {kind:'practice';mode:'model'|'recall'|'read'|'transfer-read'|'conversation';target:string;speech:string;cue:string;helperWords:string[];}
-export type LabStep = LabNumberStep|LabChoiceStep|LabPracticeStep;
+export interface LabSpellingStep extends LabBaseStep {kind:'spelling';mode:'copy'|'recall';target:string;answer:string;letters:string[];}
+export type LabStep = LabNumberStep|LabChoiceStep|LabPracticeStep|LabSpellingStep;
 export interface LabLesson {id:LabLessonId;subject:'english'|'math';title:string;description:string;goal:string;icon:string;steps:LabStep[];}
 export const LAB_CATALOG:ReadonlyArray<Omit<LabLesson,'steps'>> = Object.freeze([
-  {id:'english-conversation',subject:'english',title:'영어 대화 시나리오',description:'놀이·가게·만들기 상황에서 짧게 답하는 오프라인 시나리오 미리보기예요.',goal:'한 단어 또는 짧은 문장으로 뜻을 전하고 이어서 답해요.',icon:'💬'},
+  {id:'english-conversation',subject:'english',title:'AI 영어 회화',description:'한 대화 화면에서 글이나 목소리로 말하고 AI의 글·음성 답변을 함께 받아요.',goal:'한 단어 또는 짧은 문장으로 뜻을 전하고 이어서 답해요.',icon:'💬'},
+  {id:'english-phonics',subject:'english',title:'파닉스 · 듣고 읽고 쓰기',description:'15분 파닉스 참고 · 두 단어씩 순서대로 듣기, 읽기, 쓰기, 문장과 복습을 이어가요.',goal:'소리·글자·뜻을 연결하고 스스로 읽고 써 봐요.',icon:'🔤'},
   {id:'english-words',subject:'english',title:'뜻에서 영어 낱말 꺼내기',description:'그림과 뜻을 보고 낱말을 떠올리고 다른 상황에서 다시 써요.',goal:'듣고 따라 하기와 답을 보지 않고 말하기를 구분해요.',icon:'🌦️'},
   {id:'english-reading',subject:'english',title:'낱말에서 짧은 글 읽기',description:'소리 패턴을 읽고 처음 보는 낱말과 짧은 문장에 적용해요.',goal:'시범 듣기·스스로 읽기·새 낱말 읽기·뜻 확인을 나눠 연습해요.',icon:'📖'},
   {id:'math-calculation',subject:'math',title:'두 자리 덧셈과 뺄셈',description:'받아올림·받아내림 설정에 맞춰 답을 직접 입력해요.',goal:'십의 자리와 일의 자리를 연결해 계산해요.',icon:'✏️'},
@@ -256,6 +261,7 @@ export function buildLabLesson(id:LabLessonId,settings:LabSettings,seed:number):
   let steps:LabStep[];
   switch (id) {
     case 'english-conversation': steps=conversation(validated,rng);break;
+    case 'english-phonics': steps=buildPhonicsSteps(validated.phonicsUnit??'01',seed);break;
     case 'english-words': steps=words(validated,rng);break;
     case 'english-reading': steps=reading(validated,rng);break;
     case 'math-calculation': steps=calculation(validated,rng);break;
@@ -267,6 +273,8 @@ export function buildLabLesson(id:LabLessonId,settings:LabSettings,seed:number):
   }
   return {...meta,steps};
 }
+
+export function normalizeSpelling(value:string):string{if(typeof value!=='string'||value.length>64)return '';const normalized=value.normalize('NFKC').trim().toLowerCase();return /^[a-z]{1,24}$/.test(normalized)?normalized:'';}
 
 export function normalizeLabAnswer(value:string,format:'integer'|'time'|'date'):string {
   if (typeof value!=='string' || value.length>100) return '';
@@ -326,12 +334,12 @@ export function evaluateLabAnswers(lesson:LabLesson,answers:unknown):LabEvaluati
       if (Object.hasOwn(answer,'value') && typeof answer.value!=='string') throw new Error('입력 답을 확인해 주세요.');
       let normalized='';
       if (typeof answer.value==='string') {
-        normalized=step.kind==='number'?normalizeLabAnswer(answer.value,step.format):answer.value;
+        normalized=step.kind==='number'?normalizeLabAnswer(answer.value,step.format):step.kind==='spelling'?normalizeSpelling(answer.value):answer.value;
         if (!normalized || (step.kind==='choice'&&!step.options.some(o=>o.id===normalized))) throw new Error('올바른 답 형식이 아니에요.');
       }
       if (normalized===step.answer) {
         result.correct++;
-        outcome=answer.help==='none'&&answer.attempts===1&&!review?'independent':'supported';
+        outcome=answer.help==='none'&&answer.attempts===1&&!review&&!(step.kind==='spelling'&&step.mode==='copy')?'independent':'supported';
       } else if (review) outcome='review';
       else throw new Error('정답을 확인하거나 도움 후 다시 연습으로 기록해 주세요.');
     }
