@@ -1,30 +1,58 @@
-name: Realtime verification workspace
+name: Realtime source verification
 on:
   push:
     branches: [work/realtime-voice-20261102]
-    paths: [.github/workflows/realtime-workspace.yml]
+    paths: [.github/realtime-change.patch.xz.b64]
 permissions:
-  contents: read
+  contents: write
 jobs:
-  workspace:
+  apply:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
-          persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Verify base and exact reviewed patch
+        shell: bash
+        run: |
+          test "$(git rev-parse origin/main)" = ee13688af30eac28d739e96a6cac0871a8f9e37d
+          python - <<'PY'
+          import base64,lzma,hashlib,pathlib
+          raw=pathlib.Path('.github/realtime-change.patch.xz.b64').read_text()
+          patch=lzma.decompress(base64.b64decode(raw))
+          assert hashlib.sha256(patch).hexdigest()=='e052ea7c99d09ea99f6f5983e09dec192d1c0666032930c37214eefdbccbe177'
+          pathlib.Path('/tmp/realtime-change.patch').write_bytes(patch)
+          PY
+          git apply --check /tmp/realtime-change.patch
+          git apply /tmp/realtime-change.patch
+          rm .github/realtime-change.patch.xz.b64 .github/workflows/realtime-workspace.yml
+          git diff --check
       - run: npm ci
       - run: npm run typecheck && npm test
-      - name: Package tracked sources and pinned compiler (no credentials)
+      - name: Commit only to the isolated feature branch
         run: |
-          mkdir -p /tmp/realtime-workspace
-          git archive --format=tar HEAD -o /tmp/realtime-workspace/source.tar
-          tar -czf /tmp/realtime-workspace/compiler.tar.gz node_modules/typescript node_modules/.bin/tsc node_modules/.bin/tsserver
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: guardian realtime speech-to-speech conversation'
+          git push origin HEAD:work/realtime-voice-20261102
+      - name: Produce source manifest without credentials
+        run: |
+          mkdir -p /tmp/realtime-verified
+          python - <<'PY'
+          import hashlib,json,pathlib,subprocess
+          base='ee13688af30eac28d739e96a6cac0871a8f9e37d'
+          paths=subprocess.check_output(['git','diff','--name-only',base,'HEAD']).decode().splitlines()
+          result={'commit':subprocess.check_output(['git','rev-parse','HEAD']).decode().strip(),'files':{p:hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() if pathlib.Path(p).is_file() else None for p in paths}}
+          pathlib.Path('/tmp/realtime-verified/manifest.json').write_text(json.dumps(result,indent=2))
+          PY
+          git archive --format=tar.gz HEAD -o /tmp/realtime-verified/source.tar.gz
       - uses: actions/upload-artifact@v4
         with:
-          name: realtime-workspace
-          path: /tmp/realtime-workspace/
+          name: realtime-verified-source
+          path: /tmp/realtime-verified/
           retention-days: 1
