@@ -5,6 +5,8 @@ import {runInNewContext} from 'node:vm';
 import ts from 'typescript';
 import * as serverConfig from '../supabase/functions/_server/config.js';
 import * as coachServer from '../supabase/functions/_server/coach.js';
+import * as narration from '../supabase/functions/_server/narration.js';
+import * as curriculum from '../dist/supabase/functions/_shared/phonics-curriculum.js';
 import * as service from '../dist/supabase/functions/_shared/service.js';
 import * as domain from '../dist/supabase/functions/_shared/domain.js';
 
@@ -15,7 +17,7 @@ async function boot({duplicate=false,role='admin',configured=true}={}){
   const env={SUPABASE_URL:'https://example.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test',SUPABASE_SECRET_KEY:'sb_secret_test',OPENAI_API_KEY:configured?'test-provider-key':'',LEARNING_COACH_ENABLED:'guardian'};
   let handler,paid=0,persisted;const state=domain.emptyState();
   const network=async(url,init={})=>{
-    if(url.includes('api.openai.com')){paid++;assert.ok(url.endsWith('/chat/completions'));return Response.json({choices:[{message:{content:JSON.stringify({reply:'Do you like soccer?',modelPhrase:'',hint:''})}}]});}
+    if(url.includes('api.openai.com')){paid++;assert.ok(url.endsWith('/chat/completions'));const b=JSON.parse(init.body);if(b.audio){const wav=Buffer.alloc(48);wav.write('RIFF');wav.write('WAVE',8);return Response.json({choices:[{message:{audio:{data:wav.toString('base64'),transcript:JSON.parse(b.messages.at(-1).content).text}}}]});}return Response.json({choices:[{message:{content:JSON.stringify({reply:'Do you like soccer?',modelPhrase:'',hint:''})}}]});}
     if(url.endsWith('/auth/v1/user'))return Response.json({id:userId});
     if(url.includes('/family_members?'))return Response.json([{user_id:userId,display_name:'보호자',role}]);
     if(url.includes('/families?'))return Response.json([{state,revision:0}]);
@@ -28,7 +30,7 @@ async function boot({duplicate=false,role='admin',configured=true}={}){
     }
     throw Error('Unexpected external request');
   };
-  const modules={'config.js':serverConfig,'coach.js':{...coachServer,createOpenAICoach:config=>coachServer.createOpenAICoach(config,network)},'service.ts':service,'domain.ts':domain};
+  const modules={'config.js':serverConfig,'coach.js':{...coachServer,createOpenAICoach:(config,_,narrate)=>coachServer.createOpenAICoach(config,network,narrate)},'narration.js':{...narration,createNarrator:config=>narration.createNarrator(config,network)},'phonics-curriculum.ts':curriculum,'service.ts':service,'domain.ts':domain};
   runInNewContext(compiled,{exports:{},require:path=>{const module=modules[path.split('/').at(-1)];assert.ok(module);return module;},
     Deno:{env:{get:key=>env[key]},serve:h=>handler=h},fetch:network,crypto,URL,Request,Response,AbortSignal,console});
   const request=body=>handler(new Request('https://example.supabase.co/functions/v1/learning-coach',{method:'POST',headers:{Authorization:'Bearer test',Origin:'https://herothgf-cell.github.io','Content-Type':'application/json'},body:JSON.stringify(body)}));
@@ -36,7 +38,7 @@ async function boot({duplicate=false,role='admin',configured=true}={}){
 }
 const turn={operation:'turn',familyId,sessionId,turnId,topic:'play',adultTest:true,text:'Hi!',history:[]};
 test('deployed coach winner persists only quota identifiers before paid provider',async()=>{
-  const b=await boot();const response=await b.request(turn);assert.equal(response.status,200);assert.equal(b.paid(),1);
+  const b=await boot();const response=await b.request(turn);assert.equal(response.status,200);assert.equal(b.paid(),2);
   assert.deepEqual(b.persisted().p_payload,{type:'learning-lab/reserve-coach-turn',sessionId,turnId});
   assert.equal(b.persisted().p_request_id,turnId);assert.ok(b.persisted().p_result.coachReservationId);
   assert.ok(!JSON.stringify(b.persisted()).includes('Hi!'));

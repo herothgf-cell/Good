@@ -15,9 +15,9 @@ async function fixture(role='admin'){
  return {controller,actions,toasts,click:(a,extra={})=>controller.handleClick({dataset:{labAction:a,...extra}}),get snapshot(){return snapshot},set snapshot(v){snapshot=v},set result(v){result=v},get leaves(){return leaves}};
 }
 
-test('lab home offers nine substantive guardian activities and no child/giver UI',async()=>{
+test('lab home offers eight substantive guardian activities and no child/giver UI',async()=>{
  const f=await fixture();const html=f.controller.render(f.snapshot);
- assert.equal((html.match(/data-lab-action="start"/g)||[]).length,9);assert.match(html,/보호자 전용 · 아이 미공개/);assert.match(html,/data-lab-form="settings"/);assert.match(html,/learning-legacy/);
+ assert.equal((html.match(/data-lab-action="start"/g)||[]).length,8);assert.match(html,/보호자 전용 · 아이 미공개/);assert.match(html,/data-lab-form="settings"/);assert.match(html,/learning-legacy/);
  for(const role of ['child','giver']){const child=await fixture(role);assert.equal(child.controller.render(child.snapshot),'');await child.click('start',{lessonId:'math-calculation'});assert.equal(child.actions.length,0);}
 });
 test('numeric runner uses direct entry and dynamic steps, then retries same completion id',async()=>{
@@ -44,11 +44,11 @@ test('changed settings version blocks stale completion and offers restart while 
  const f=await fixture();await f.click('start',{lessonId:'math-calculation'});f.snapshot.state.learningLab.settingsVersion++;
  f.controller.reconcile(f.snapshot);const html=f.controller.render(f.snapshot);assert.match(html,/설정이 바뀌었어요/);assert.match(html,/data-lab-action="restart"/);assert.doesNotMatch(html,/data-lab-form="answer"/);
 });
-test('coach remains a separate real adult test and remote-only voice never speaks',async()=>{
- const f=await fixture();await f.click('start',{lessonId:'english-conversation'});const html=f.controller.render(f.snapshot);assert.match(html,/보호자 목소리로 AI 연결 테스트/);assert.match(html,/시나리오 미리보기/);assert.match(html,/data-lab-action="coach-check"/);
- const synth=globalThis.speechSynthesis,utterance=globalThis.SpeechSynthesisUtterance;let spoken=0;
- globalThis.speechSynthesis={cancel(){},getVoices(){return [{lang:'en-US',localService:false}]},speak(){spoken++}};globalThis.SpeechSynthesisUtterance=class{};
- try{await f.click('listen');assert.equal(spoken,0);assert.match(f.toasts.at(-1),/기기에 저장된 영어 음성/);await f.click('pause');assert.ok(f.leaves>0);}finally{globalThis.speechSynthesis=synth;globalThis.SpeechSynthesisUtterance=utterance;}
+test('conversation uses the original text panel with generated AI voice, never device synthesis',async()=>{
+ const f=await fixture();await f.click('start',{lessonId:'english-conversation'});const html=f.controller.render(f.snapshot);
+ assert.match(html,/AI 영어 회화/);assert.match(html,/data-lab-action="coach-check"/);assert.match(html,/lab-coach-message/);assert.doesNotMatch(html,/realtime-start|기기에 저장된/);
+ const original=globalThis.speechSynthesis;let spoken=0;globalThis.speechSynthesis={speak(){spoken++}};
+ try{await f.click('listen');assert.equal(spoken,0);await f.click('pause');assert.ok(f.leaves>0);}finally{globalThis.speechSynthesis=original;}
 });
 test('question visuals never disclose unknown end time or calendar target before help',async()=>{
  const f=await fixture();await f.click('start',{lessonId:'math-clock'});let html=f.controller.render(f.snapshot);
@@ -58,10 +58,12 @@ test('question visuals never disclose unknown end time or calendar target before
 test('independent reading presents text without first playing or revealing a model',async()=>{
  const f=await fixture();await f.click('start',{lessonId:'english-reading'});await f.click('observe',{observation:'supported'});await f.click('next');const html=f.controller.render(f.snapshot);assert.match(html,/data-practice-mode="read"/);assert.match(html,/class="lab-target"/);assert.doesNotMatch(html,/함께 보는 답/);
 });
-test('listening to a scenario model phrase records support rather than independent conversation',async()=>{
- const f=await fixture();const synth=globalThis.speechSynthesis,utterance=globalThis.SpeechSynthesisUtterance;
- globalThis.speechSynthesis={cancel(){},getVoices:()=>[{lang:'en-US',localService:true}],speak(){}};globalThis.SpeechSynthesisUtterance=class{constructor(text){this.text=text}};
- try{await f.click('start',{lessonId:'english-conversation'});await f.click('listen');for(let i=0;i<10&&!f.controller.render(f.snapshot).includes('lab-summary');i++){await f.click('observe',{observation:'independent'});await f.click('next');}assert.equal(f.actions[0].answers[0].help,'model');assert.equal(f.actions[0].answers[0].observation,'supported');}finally{globalThis.speechSynthesis=synth;globalThis.SpeechSynthesisUtterance=utterance;}
+test('listening to a phonics reading model records support rather than independent reading',async()=>{
+ const f=await fixture();await f.click('start',{lessonId:'english-phonics'});await f.click('observe',{observation:'supported'});await f.click('next');await f.click('listen');await f.click('observe',{observation:'independent'});await f.click('next');
+ for(let i=0;i<15&&!f.controller.render(f.snapshot).includes('lab-summary');i++){
+  const html=f.controller.render(f.snapshot);if(html.includes('data-practice-mode='))await f.click('observe',{observation:'independent'});else{await f.click('model');await f.click('review');}await f.click('next');
+ }
+ assert.equal(f.actions[0].answers[1].help,'model');assert.equal(f.actions[0].answers[1].observation,'supported');f.controller.leave();
 });
 test('100 won transfer shows exact coins and counts pieces rather than banknotes',async()=>{
  const {renderLabVisual}=await import('../dist/src/learning-lab-visuals.js');const html=renderLabVisual({kind:'money',unit:100,counts:[2,3]});assert.equal((html.match(/class="lab-coin"/g)||[]).length,5);assert.match(html,/100원 2개, 100원 3개/);assert.doesNotMatch(html,/lab-bill|장/);

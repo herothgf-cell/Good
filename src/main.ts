@@ -1,3 +1,4 @@
+import {LearningReader} from './learning-reader.ts';
 import {timeRequestForm} from './time-coupons.ts';
 import {LearningController} from './learning.ts';
 import {LearningLabController} from './learning-lab.ts';
@@ -5,11 +6,11 @@ import {LearningCoach} from './learning-coach.ts';
 import {LearningRealtime} from './learning-realtime.ts';
 import {updateRealtimePanel} from './learning-realtime-ui.ts';
 import {canonical} from '../supabase/functions/_shared/service.ts';
-import {canVisit,ruleEditor,letterDetail,preview} from './experience.ts';
+import {canVisit,ruleEditor,rulePraiseForm,letterDetail,preview} from './experience.ts';
 import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
 import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot,type FamilyAction} from './backend.ts';
 import {AuthClient,ApiError,validateConfig,shouldRetainPending,type Config} from './auth.ts';
-import {drawQuote,poolFor,dayKey,rulesFor,unreadPraises,isGachaEnabled,couponTime,durationFromTitle,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
+import {drawQuote,poolFor,dayKey,praiseDateFor,rulesFor,rulesVersion,unreadPraises,isGachaEnabled,couponTime,durationFromTitle,type Action,type Reward,type Role} from '../supabase/functions/_shared/domain.ts';
 import {renderApp,rewardForm,rewardIconPicker,cloudLogin,childJoinForm,onboarding,h,roleName,icons,names,formatProbability,type Screen} from './ui.ts';
 import {downloadText,ledgerCSV} from './export.ts';
 declare global {interface Window {PRAISE_CONFIG?:Config;PRAISE_STANDALONE?:boolean}}
@@ -42,11 +43,12 @@ const learning=new LearningController({snapshot:()=>snapshot,perform:action=>doA
 let legacyLearning=false;
 const coach=new LearningCoach({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render,request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 AI 연결을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-coach',body,signal);}});
 const realtime=new LearningRealtime({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render:()=>{if(!updateRealtimePanel(realtime.view()))render();},request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 음성을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-realtime',body,signal);}});
-const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach,realtime});
+const reader=new LearningReader({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render,request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 AI 음성을 사용해 주세요.');return auth.apiTransient('/functions/v1/learning-coach',body,signal);}});
+const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach,realtime,reader});
 function leaveLearning(){learning.leave();learningLab.leave();coach.leave();realtime.leave();}
 function learningView():string{if(!snapshot)return '';if(snapshot.me.role==='admin'&&!legacyLearning)return learningLab.render(snapshot);return (snapshot.me.role==='admin'?'<button class="button outline" data-action="learning-v2">← 새 학습 테스트로 돌아가기</button>':'')+learning.render(snapshot);}
 function dialogError(message:string){const el=modal.querySelector<HTMLDivElement>('.dialog-error');if(el)el.textContent=message;else toast(message);}
-function render(){if(!snapshot)return;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learningView():undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}
+function render(){if(!snapshot)return;const oldPraise=document.querySelector<HTMLFormElement>('#praise-form');const praiseDraft=screen==='praise'&&oldPraise?.dataset.actorId===snapshot.me.id?new FormData(oldPraise):null;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learningView():undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;if(praiseDraft){const f=document.querySelector<HTMLFormElement>('#praise-form');for(const [name,value] of praiseDraft){const el=f?.elements.namedItem(name);if(el instanceof RadioNodeList)el.value=String(value);else if(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement)el.value=String(value);}f?.querySelector('textarea')?.dispatchEvent(new Event('input',{bubbles:true}));}if(screen==='learning'&&!legacyLearning)learningLab.afterRender();}
 function reconcileLearningVisibility():boolean{
  if(!snapshot)return false;
  const changed=learning.reconcile(snapshot);
@@ -113,7 +115,7 @@ async function doAction(action?:FamilyAction,retry=false):Promise<boolean>{
   busy=true;disableControls(true);
   try {
     const result=await backend.perform(operation.action,operation.requestId);
-    snapshot=result.snapshot;savePending(null);syncError='';lastSync=new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
+    snapshot=result.snapshot;if(operation.action.type==='praise/give')document.querySelector<HTMLFormElement>('#praise-form')?.reset();savePending(null);syncError='';lastSync=new Intl.DateTimeFormat('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date());
     busy=false;disableControls(false);closeModal(true);render();
     if(result.result.coupon){const coupon=result.result.coupon,time=couponTime(coupon);openModal(`<div class="celebration"><div class="eyebrow">A GIFT FROM YOUR LITTLE STARS</div><div class="celebration-stars">✧ ✦ ✧</div><span class="dialog-emoji">${h(coupon.icon)}</span><h2>${h(coupon.title)}</h2><p>${h(coupon.description)}<br>${time?`받은 ${time.totalMinutes}분 · 필요한 만큼 나눠 쓸 수 있어요.<br>`:''}쿠폰을 보관함에 안전하게 넣어 두었어요.</p><button class="button primary full" data-action="go-inventory">${snapshot?.me.role==='child'?'내 보관함':h(snapshot?.state.childName)+' 보관함'}으로 가기 →</button></div>`);}else toast(result.result.message);
     return true;
@@ -175,7 +177,21 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
   case 'open-letter':{const p=snapshot?.state.praises.find(p=>p.id===id);if(p&&snapshot)openModal(letterDetail(p,snapshot.me.role==='child',snapshot.state.readPraiseIds?.includes(p.id)??false));break;}
   case 'read-letter':if(id&&snapshot?.me.role==='child')await doAction({type:'letters/read',ids:[id]});break;
   case 'edit-rule':if(snapshot?.me.role==='admin')openModal(ruleEditor(rulesFor(snapshot.state).find(r=>r.id===id)));break;
-  case 'give-rule':{if(!snapshot||snapshot.me.role==='child')return;const r=rulesFor(snapshot.state).find(r=>r.id===id&&r.active);if(r)confirm('이 행동을 칭찬할까요?',`<div class="confirm-card"><span class="dialog-emoji">${h(r.icon)}</span><h3>${h(r.title)}</h3><p>칭찬 편지와 별 ${r.stars}개를 보내요.</p></div>`,{type:'praise/rule',ruleId:r.id,version:r.version},'칭찬 편지 보내기');break;}
+  case 'give-rule':{if(!snapshot||snapshot.me.role==='child')return;const r=rulesFor(snapshot.state).find(r=>r.id===id&&r.active);if(r)openModal(rulePraiseForm(r));break;}
+  case 'praise-date-today':case 'praise-date-yesterday':{const input=source.closest('form')?.querySelector<HTMLInputElement>('[name="praiseDate"]');if(input){input.value=dayKey(new Date(Date.now()-(action==='praise-date-yesterday'?86400000:0)).toISOString());input.dispatchEvent(new Event('input',{bubbles:true}));}break;}
+  case 'move-rule-up':case 'move-rule-down':{
+   if(snapshot?.me.role!=='admin'||!id)break;
+   const version=Number(source.dataset.listVersion);
+   if(version!==rulesVersion(snapshot.state)){render();toast('행동 목록이 바뀌었어요. 최신 순서에서 다시 선택해 주세요.');break;}
+   const order=rulesFor(snapshot.state).map(r=>r.id),from=order.indexOf(id),to=from+(action==='move-rule-up'?-1:1);
+   if(from<0||to<0||to>=order.length)break;
+   [order[from],order[to]]=[order[to]!,order[from]!];
+   if(await doAction({type:'rule/reorder',ruleIds:order,version}))document.querySelector<HTMLElement>(`[data-rule-id="${CSS.escape(id)}"] [data-action="edit-rule"]`)?.focus();break;
+  }
+  case 'delete-rule':{
+   if(snapshot?.me.role!=='admin'||!id)break;const r=rulesFor(snapshot.state).find(r=>r.id===id);if(!r)break;
+   confirm('행동을 삭제할까요?',`<p class="dialog-help"><strong>${h(r.title)}</strong>를 행동 목록에서 없애요.<br>이미 보낸 칭찬 편지와 지급한 별은 삭제되지 않아요.</p>`,{type:'rule/delete',ruleId:id,version:Number(source.dataset.ruleVersion),listVersion:Number(source.dataset.listVersion)},'행동 삭제');break;
+  }
   case 'preview-child':if(snapshot?.me.role==='admin')openModal(preview(snapshot.state));break;
   case 'toggle-gacha':if(snapshot?.me.role==='admin'){await doAction({type:'gacha/set-enabled',enabled:source.dataset.enabled==='true'});document.querySelector<HTMLElement>('[data-action="toggle-gacha"]')?.focus();}break;
   case 'simulate-draw':{if(snapshot?.me.role!=='admin')return;const pool=poolFor(snapshot.state);if(!pool.length){toast('뽑기 가능한 보상과 재고를 확인해 주세요.');break;}let ticket=crypto.getRandomValues(new Uint32Array(1))[0]!/4294967296*pool.reduce((n,i)=>n+i.weight,0);let selected=pool[pool.length-1]!.reward;for(const item of pool){if(ticket<item.weight){selected=item.reward;break;}ticket-=item.weight;}openModal(`<div class="preview-label">시험 결과 · 실제 지급 아님</div><div class="celebration"><span class="dialog-emoji">${h(selected.icon)}</span><h2>${h(selected.title)}</h2><p>별·재고·쿠폰·뽑기 횟수는 바뀌지 않았어요.</p></div><button class="button primary full" data-action="close-modal">확인</button>`);break;}
@@ -234,6 +250,7 @@ document.addEventListener('submit',event=>{const form=event.target as HTMLFormEl
  if(form.dataset.learningForm){if(screen==='learning'&&snapshot&&canVisit(snapshot.me.role,'learning',snapshot.state))void learning.handleSubmit(form).catch(error=>toast(err(error)));return;}
  const data=new FormData(form);const value=(key:string)=>String(data.get(key)??'');const number=(key:string)=>Number(value(key));
  (async()=>{switch(form.id){
+  case 'rule-praise-form':await doAction({type:'praise/rule',ruleId:form.dataset.id!,version:Number(form.dataset.version),praiseDate:value('praiseDate')});break;
   case 'rule-form':{const rule={id:form.dataset.id||crypto.randomUUID(),title:value('title'),description:value('description'),icon:value('icon'),stars:number('stars'),dailyLimit:number('dailyLimit'),active:data.has('active'),featured:data.has('featured'),...(form.dataset.id?{version:Number(form.dataset.version)}:{})};await doAction({type:'rule/save',rule});break;}
   case 'correction-form':{const kind=form.dataset.kind;if(kind==='stars/reverse'||kind==='coupon/revoke')confirm('정정 내용을 기록할까요?',`<p class="dialog-help">${h(value('reason'))}</p>`,{type:kind,id:form.dataset.id!,reason:value('reason'),...usageVersionFrom(form)},'정정 기록');break;}
   case 'grant-stars-form':{const stars=number('stars'),reason=value('reason').trim();confirm('별을 직접 지급할까요?',`<div class="confirm-card"><h3>✦ +${h(stars)}개</h3><p>${h(reason)}</p><p>지급 후 ${(snapshot?.state.balance??0)+stars}개</p></div>`,{type:'stars/grant',stars,reason},'별 지급');break;}
@@ -250,7 +267,7 @@ document.addEventListener('submit',event=>{const form=event.target as HTMLFormEl
    await doAction({type:'coupon/request',id:form.dataset.id!,minutes,...usageVersionFrom(form)});break;
   }
   case 'rename-member-form':await doAction({type:'member/rename',userId:form.dataset.id!,expectedName:form.dataset.expectedName!,displayName:value('displayName')});break;
-  case 'praise-form':{const action:Action={type:'praise/give',stars:number('stars'),category:value('category'),reason:value('reason')};const duplicate=snapshot?.state.praises.some(p=>!p.reversed&&p.actorId===snapshot?.me.id&&p.reason===action.reason.trim()&&dayKey(p.createdAt)===dayKey(new Date().toISOString()));if(duplicate)confirm('같은 칭찬을 오늘 이미 남겼어요','<p class="dialog-help">다른 행동에 대한 추가 칭찬인지 확인해 주세요. 실수라면 돌아가서 수정할 수 있어요.</p>',action,'추가 칭찬이 맞아요');else await doAction(action);break;}
+  case 'praise-form':{const action:Action={type:'praise/give',stars:number('stars'),category:value('category'),reason:value('reason'),praiseDate:value('praiseDate')};const duplicate=snapshot?.state.praises.some(p=>!p.reversed&&p.actorId===snapshot?.me.id&&p.reason===action.reason.trim()&&praiseDateFor(p)===action.praiseDate);if(duplicate)confirm('선택한 날짜에 같은 칭찬을 이미 남겼어요','<p class="dialog-help">다른 행동에 대한 추가 칭찬인지 확인해 주세요. 실수라면 돌아가서 수정할 수 있어요.</p>',action,'추가 칭찬이 맞아요');else await doAction(action);break;}
   case 'reward-form':{const reward:Omit<Reward,'version'>&{version?:number}={id:form.dataset.id||crypto.randomUUID(),title:value('title'),description:value('description'),icon:value('icon'),cost:number('cost'),stock:data.has('unlimited')?null:number('stock'),active:data.has('active'),shop:data.has('shop'),gacha:data.has('gacha'),durationMinutes:data.has('timeCoupon')?number('durationMinutes'):null};if(form.dataset.id)reward.version=Number(form.dataset.version);await doAction({type:'reward/save',reward});break;}
   case 'box-form':{const items=[...data.entries()].filter(([key,val])=>key.startsWith('weight-')&&Number(val)>0).map(([key,val])=>({rewardId:key.slice(7),weight:Number(val)}));await doAction({type:'box/save',box:{title:value('title'),cost:number('cost'),dailyLimit:number('dailyLimit'),items}});break;}
   case 'profile-form':await doAction({type:'profile/save',familyName:value('familyName'),childName:value('childName')});break;
@@ -269,7 +286,7 @@ document.addEventListener('input',event=>{const target=event.target as HTMLInput
   if(target.name==='durationMinutes'){const fields=form.querySelector<HTMLElement>('.time-reward-fields');if(fields)fields.dataset.durationManual='true';}
   if(target.name==='title')updateRewardTimeFields(form,true);
  }
- if(form?.id==='praise-form'){const data=new FormData(form);const message=String(data.get('reason')??'');const text=document.querySelector('#praise-preview-text');const stars=document.querySelector('#praise-preview-stars');const count=document.querySelector('#reason-count');if(text)text.textContent=message||'작은 도전도 멋진 칭찬이 돼요.';if(stars)stars.textContent=`✦ ${String(data.get('stars'))}개`;if(count)count.textContent=`${message.length} / 180`;}
+ if(form?.id==='praise-form'){const datePreview=document.querySelector('#praise-preview-date');if(datePreview)datePreview.textContent='칭찬일자 · '+(form.querySelector<HTMLInputElement>('[name="praiseDate"]')?.value??'');const data=new FormData(form);const message=String(data.get('reason')??'');const text=document.querySelector('#praise-preview-text');const stars=document.querySelector('#praise-preview-stars');const count=document.querySelector('#reason-count');if(text)text.textContent=message||'작은 도전도 멋진 칭찬이 돼요.';if(stars)stars.textContent=`✦ ${String(data.get('stars'))}개`;if(count)count.textContent=`${message.length} / 180`;}
  if(form?.id==='box-form'){const total=[...new FormData(form).entries()].filter(([key])=>key.startsWith('weight-')).reduce((sum,[,v])=>sum+(Number(v)||0),0);const label=document.querySelector('#weight-total');if(label){label.textContent=`합계 ${total}%`;label.classList.toggle('invalid',total!==100);}}
 });
 document.addEventListener('change',event=>{const target=event.target as HTMLInputElement;if(target.name==='rewardStatus'){rewardStatus=target.value;render();document.querySelector<HTMLSelectElement>('[name="rewardStatus"]')?.focus();return;}if(target.name==='timeCoupon'&&target.form){const fields=target.form.querySelector<HTMLElement>('.time-reward-fields');if(fields)fields.dataset.durationManual='true';updateRewardTimeFields(target.form);}if(target.name==='unlimited'){const stock=target.form?.querySelector<HTMLInputElement>('[name="stock"]');if(stock)stock.disabled=target.checked;}if(target.name==='stars')target.dispatchEvent(new Event('input',{bubbles:true}));});

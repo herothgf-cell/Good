@@ -1,5 +1,6 @@
 """Real browser controller lifecycle; fake media/provider boundaries, no network/accounts."""
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -8,7 +9,7 @@ from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 
 def main():
-    source=(ROOT/'dist/src/learning-coach.js').read_text().replace('export class LearningCoach', 'window.LearningCoach = class LearningCoach')
+    source=re.sub(r'^import .*?;\n', '', (ROOT/'dist/src/learning-coach.js').read_text(), flags=re.M).replace('export class LearningCoach', 'window.LearningCoach = class LearningCoach')
     with sync_playwright() as p:
         executable=os.environ.get('CHROMIUM_PATH') or shutil.which('google-chrome') or shutil.which('chromium')
         browser=p.chromium.launch(**({'executable_path':executable} if executable else {}),headless=True,args=['--no-sandbox'])
@@ -34,19 +35,22 @@ def main():
               this.onstop?.();
             },0);}
           };
-          Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{
-            cancel:()=>{},getVoices:()=>[{localService:true,lang:'en-US',name:'Local test voice'}],
-            speak:utterance=>{f.spoken.push({text:utterance.text,activeTracks:f.activeTracks});f.utterance=utterance;}
-          }});
-          window.SpeechSynthesisUtterance=function(text){this.text=text;};
+          window.Audio=class {
+            constructor(){f.audio=this;} async play(){f.spoken.push({activeTracks:f.activeTracks});}
+            pause(){} removeAttribute(){} load(){} currentTime=0;
+          };
+          const bytes=new Uint8Array(48);bytes.set([82,73,70,70]);bytes.set([87,65,86,69],8);
+          f.generated={mime:'audio/wav',base64:btoa(String.fromCharCode(...bytes)),transcript:'Do you play with a friend?'};
+          Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{getVoices:()=>[],speak(){throw Error('device voice must not be used');},cancel(){}}});
           Object.defineProperty(window,'localStorage',{configurable:true,value:{setItem:()=>{throw Error('voice storage forbidden');},getItem:()=>{throw Error('voice storage forbidden');}}});
         }""")
+        page.add_script_tag(content=(ROOT/'dist/src/learning-audio.js').read_text().replace('export class LearningAudio','window.LearningAudio = class LearningAudio'))
         page.add_script_tag(content=source)
         page.evaluate("""()=>{
           window.coach=new LearningCoach({identity:()=>({familyId:'family',actorId:'parent',role:'admin',mode:'cloud'}),render:()=>{},request:async(body,signal)=>{
             fixture.requests.push(body);
             if(body.operation==='status')return {available:true,message:'ready'};
-            return {transcript:'I like soccer.',reply:'Do you play with a friend?',modelPhrase:'',hint:'친구와 함께 하나요?',speech:'Do you play with a friend?'};
+            return {transcript:'I like soccer.',reply:'Do you play with a friend?',modelPhrase:'',hint:'친구와 함께 하나요?',speech:'Do you play with a friend?',audio:fixture.generated};
           }});
         }""")
         page.evaluate('()=>coach.check()')
@@ -62,7 +66,7 @@ def main():
         assert result['view']['messages'][0]['text']=='I like soccer.'
         assert len(result['view']['messages'])==2
         print('PASS: mp4 final data is sent once, tracks stop before speech, real reply remains ephemeral',flush=True)
-        page.evaluate('fixture.utterance.onend()')
+        page.evaluate('fixture.audio.onended()')
         page.evaluate("()=>coach.startRecording('play')")
         page.evaluate("Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'))")
         assert page.evaluate('fixture.activeTracks')==0

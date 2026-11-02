@@ -25,3 +25,13 @@ test('a coach request cancelled before auth finishes never reaches the network',
   try{await assert.rejects(()=>auth.apiTransient('/functions/v1/learning-coach',{text:'cancelled'},controller.signal),{name:'AbortError'});}
   finally{globalThis.fetch=original;}
 });
+test('AI audio response larger than text limit is accepted only on the audio coach route',async()=>{
+ const original=globalThis.fetch;const {auth,writes}=setup();let calls=0;const data={audio:{base64:'A'.repeat(30000)}};
+ globalThis.fetch=async()=>{calls++;return Response.json(data);};
+ try{assert.deepEqual(await auth.apiTransient('/functions/v1/learning-coach',{},new AbortController().signal),data);await assert.rejects(()=>auth.apiTransient('/functions/v1/learning-realtime',{},new AbortController().signal));assert.equal(calls,2);assert.deepEqual(writes,[]);}finally{globalThis.fetch=original;}
+});
+test('oversized streamed audio is cancelled without retries or durable storage',async()=>{
+ const original=globalThis.fetch;const {auth,writes}=setup();let calls=0,cancelled=false;
+ globalThis.fetch=async()=>{calls++;return new Response(new ReadableStream({pull(c){c.enqueue(new Uint8Array(500000));},cancel(){cancelled=true;}}));};
+ try{await assert.rejects(()=>auth.apiTransient('/functions/v1/learning-coach',{},new AbortController().signal),e=>e.status===502);assert.equal(calls,1);assert.equal(cancelled,true);assert.deepEqual(writes,[]);}finally{globalThis.fetch=original;}
+});

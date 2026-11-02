@@ -1,0 +1,13 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {renderApp} from '../dist/src/ui.js';import {letterDetail} from '../dist/src/experience.js';
+import * as D from '../dist/supabase/functions/_shared/domain.js';
+const admin={id:'dad',name:'아빠',role:'admin'},child={id:'kid',name:'아이',role:'child'};let n=0;
+const ctx={actor:admin,now:'2026-11-02T14:30:00Z',newId:()=>`v11ui-${++n}`,random:()=>0};
+const fixture=()=>{let s=D.emptyState();for(const reason of ['읽은 편지 본문','새 편지 본문'])s=D.applyAction(s,{type:'praise/give',stars:1,category:'노력',reason,praiseDate:'2026-11-01'},ctx).state;s.readPraiseIds=[s.praises[0].id];return s;};
+const view=(screen,me=child,s=fixture())=>({snapshot:{state:s,me,members:[admin,child],familyId:'f',revision:1},screen,mode:'demo',busy:false,pending:false,syncError:'',lastSync:'',inventoryFilter:'all'});
+test('v11 아이 홈은 읽지 않은 편지 본문만 크게 표시한다',()=>{const html=renderApp(view('home'));assert.match(html,/새 편지 본문/);assert.doesNotMatch(html,/읽은 편지 본문/);assert.match(html,/data-nav="letter-archive"/);});
+test('v11 읽은 편지만 있으면 홈에 과거 본문/큰 편지가 나오지 않는다',()=>{const s=fixture();s.readPraiseIds=s.praises.map(p=>p.id);const html=renderApp(view('home',child,s));assert.doesNotMatch(html,/class="mail-hero|읽은 편지 본문|새 편지 본문/);assert.match(html,/새 편지가 아직 없어요/);});
+test('v11 새편지함과 보관함에는 서로 다른 편지만 표시한다',()=>{const inbox=renderApp(view('letters')),archive=renderApp(view('letter-archive'));assert.match(inbox,/새 편지 본문/);assert.doesNotMatch(inbox,/읽은 편지 본문/);assert.match(archive,/읽은 편지 본문/);assert.doesNotMatch(archive,/새 편지 본문/);assert.match(archive,/칭찬 편지 보관함/);});
+test('v11 행동 관리에는 삭제/위/아래와 목록 버전이 있다',()=>{const html=renderApp(view('rules',admin));for(const action of ['delete-rule','move-rule-up','move-rule-down'])assert.ok(html.includes(`data-action="${action}"`));assert.match(html,/data-list-version="0"/);});
+test('v11 부모 칭찬에는 날짜 선택과 오늘/어제 단축 버튼이 있다',()=>{const html=renderApp(view('praise',admin));assert.match(html,/type="date"[^>]*name="praiseDate"/);assert.match(html,/data-action="praise-date-yesterday"/);assert.match(html,/칭찬일자/);});
+test('v11 상세 편지에는 칭찬한 날짜와 실제 보낸 시각이 별도 표시된다',()=>{const s=fixture(),html=letterDetail(s.praises[0],true,false);assert.match(html,/11월 1일/);assert.match(html,/보낸 시각/);assert.match(html,/보관하기/);});
