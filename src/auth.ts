@@ -51,10 +51,10 @@ export class AuthClient {
   async logout():Promise<void>{const s=this.session();this.storage.removeItem(this.key);if(s)try{await requestJson(`${this.config.supabaseUrl}/auth/v1/logout?scope=local`,{method:'POST',headers:this.headers(s.access_token)});}catch{/* Local session was removed even when network is unavailable. */}}
   async api(path:string,body?:unknown):Promise<any>{const s=await this.validSession();return requestJson(`${this.config.supabaseUrl}${path}`,{method:body===undefined?'GET':'POST',headers:this.headers(s.access_token),...(body===undefined?{}:{body:JSON.stringify(body)})});}
   // Ephemeral coach requests have no automatic retry or durable pending payload.
-  async apiTransient(path:string,body:unknown,signal:AbortSignal):Promise<any>{
+  async apiTransient(path:string,body:unknown,signal:AbortSignal,maxResponseChars=20000):Promise<any>{
     const s=await this.validSession();if(signal.aborted)throw new DOMException('Aborted','AbortError');
     const response=await fetch(`${this.config.supabaseUrl}${path}`,{method:'POST',headers:this.headers(s.access_token),body:JSON.stringify(body),signal:AbortSignal.any([signal,AbortSignal.timeout(60000)]),cache:'no-store'});
-    const raw=await response.text();if(raw.length>20000)throw new ApiError('대화 응답을 확인하지 못했어요.',502);
+    const raw=await response.text();if(raw.length>Math.min(maxResponseChars,3300000))throw new ApiError('대화 응답을 확인하지 못했어요.',502);
     let result:any;try{result=JSON.parse(raw);}catch{throw new ApiError('대화 응답을 읽지 못했어요.',502);}
     if(!response.ok)throw new ApiError(typeof result?.error==='string'?result.error.slice(0,240):'AI 연결을 확인해 주세요.',response.status,false,result?.code??'');
     return result;

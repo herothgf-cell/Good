@@ -1,3 +1,6 @@
+import {CloudSpeech} from './cloud-speech.ts';
+import {PhonicsController} from './phonics.ts';
+import {applyEnglishCommand,englishLearningFor} from '../supabase/functions/_shared/english-learning.ts';
 import {timeRequestForm} from './time-coupons.ts';
 import {LearningController} from './learning.ts';
 import {LearningLabController} from './learning-lab.ts';
@@ -40,13 +43,27 @@ const err=(error:unknown)=>error instanceof Error?error.message:'처리하지 �
 function toast(message:string){clearTimeout(toastTimer);toastElement.textContent=message;toastElement.classList.add('show');toastTimer=setTimeout(()=>toastElement.classList.remove('show'),4300);}
 const learning=new LearningController({snapshot:()=>snapshot,perform:action=>doAction(action),render,toast});
 let legacyLearning=false;
-const coach=new LearningCoach({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render,request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 AI 연결을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-coach',body,signal);}});
+let demoEnglishState:Record<string,unknown>={};
+const englishIdentity=()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null;
+async function englishRequest(body:any,signal:AbortSignal):Promise<any>{
+ if(!snapshot||snapshot.me.role!=='admin')throw Error('보호자만 사용할 수 있어요.');
+ if(mode==='demo'){
+  if(body.operation==='speech')throw Error('가족 공유 보호자 계정에서 AI 음성을 사용할 수 있어요.');
+  if(body.operation==='command'){const r=applyEnglishCommand(demoEnglishState,body.action,Date.now());demoEnglishState=r.state;return r.result;}
+  return {progress:englishLearningFor(demoEnglishState)};
+ }
+ if(!auth)throw Error('다시 로그인해 주세요.');
+ return auth.apiTransient('/functions/v1/learning-english',{...body,familyId:snapshot.familyId},signal,3300000);
+}
+const speech=new CloudSpeech({identity:englishIdentity,request:englishRequest,render});
+const phonics=new PhonicsController({identity:englishIdentity,request:englishRequest,speech,render});
+const coach=new LearningCoach({voice:speech,identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render,request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 AI 연결을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-coach',body,signal);}});
 const realtime=new LearningRealtime({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render:()=>{if(!updateRealtimePanel(realtime.view()))render();},request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 음성을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-realtime',body,signal);}});
-const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach,realtime});
+const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach,realtime,speech,phonics});
 function leaveLearning(){learning.leave();learningLab.leave();coach.leave();realtime.leave();}
 function learningView():string{if(!snapshot)return '';if(snapshot.me.role==='admin'&&!legacyLearning)return learningLab.render(snapshot);return (snapshot.me.role==='admin'?'<button class="button outline" data-action="learning-v2">← 새 학습 테스트로 돌아가기</button>':'')+learning.render(snapshot);}
 function dialogError(message:string){const el=modal.querySelector<HTMLDivElement>('.dialog-error');if(el)el.textContent=message;else toast(message);}
-function render(){if(!snapshot)return;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learningView():undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}
+function render(){if(!snapshot)return;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learningView():undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;phonics.afterRender();}
 function reconcileLearningVisibility():boolean{
  if(!snapshot)return false;
  const changed=learning.reconcile(snapshot);

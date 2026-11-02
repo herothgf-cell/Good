@@ -44,8 +44,8 @@ test('changed settings version blocks stale completion and offers restart while 
  const f=await fixture();await f.click('start',{lessonId:'math-calculation'});f.snapshot.state.learningLab.settingsVersion++;
  f.controller.reconcile(f.snapshot);const html=f.controller.render(f.snapshot);assert.match(html,/설정이 바뀌었어요/);assert.match(html,/data-lab-action="restart"/);assert.doesNotMatch(html,/data-lab-form="answer"/);
 });
-test('coach remains a separate real adult test and remote-only voice never speaks',async()=>{
- const f=await fixture();await f.click('start',{lessonId:'english-conversation'});const html=f.controller.render(f.snapshot);assert.match(html,/보호자 목소리로 AI 연결 테스트/);assert.match(html,/시나리오 미리보기/);assert.match(html,/data-lab-action="coach-check"/);
+test('legacy fixed-scenario fixture retains adult coach and prevents unapproved device voice',async()=>{
+ const f=await fixture();await f.click('start',{lessonId:'english-conversation'});const html=f.controller.render(f.snapshot);assert.match(html,/영어 회화 · 음성 \+ 글/);assert.match(html,/시나리오 미리보기/);assert.match(html,/data-lab-action="coach-check"/);
  const synth=globalThis.speechSynthesis,utterance=globalThis.SpeechSynthesisUtterance;let spoken=0;
  globalThis.speechSynthesis={cancel(){},getVoices(){return [{lang:'en-US',localService:false}]},speak(){spoken++}};globalThis.SpeechSynthesisUtterance=class{};
  try{await f.click('listen');assert.equal(spoken,0);assert.match(f.toasts.at(-1),/기기에 저장된 영어 음성/);await f.click('pause');assert.ok(f.leaves>0);}finally{globalThis.speechSynthesis=synth;globalThis.SpeechSynthesisUtterance=utterance;}
