@@ -1,5 +1,8 @@
 import {timeRequestForm} from './time-coupons.ts';
 import {LearningController} from './learning.ts';
+import {LearningLabController} from './learning-lab.ts';
+import {LearningCoach} from './learning-coach.ts';
+import {canonical} from '../supabase/functions/_shared/service.ts';
 import {canVisit,ruleEditor,letterDetail,preview} from './experience.ts';
 import {grantStarsForm,grantRewardForm,renameMemberForm} from './guardian.ts';
 import {DemoRepository,CloudRepository,NoFamilyError,DEMO_MEMBERS,DEMO_KEY,type Backend,type Snapshot,type FamilyAction} from './backend.ts';
@@ -34,13 +37,20 @@ let pending:Pending|null=null;let inviteCode='';let inviteRole='';let latestInvi
 const err=(error:unknown)=>error instanceof Error?error.message:'처리하지 못했어요. 다시 확인해 주세요.';
 function toast(message:string){clearTimeout(toastTimer);toastElement.textContent=message;toastElement.classList.add('show');toastTimer=setTimeout(()=>toastElement.classList.remove('show'),4300);}
 const learning=new LearningController({snapshot:()=>snapshot,perform:action=>doAction(action),render,toast});
+let legacyLearning=false;
+const coach=new LearningCoach({identity:()=>snapshot?{familyId:snapshot.familyId,actorId:snapshot.me.id,role:snapshot.me.role,mode}:null,render,request:async(body,signal)=>{if(!auth||mode!=='cloud')throw new Error('가족 공유 보호자 계정에서 AI 연결을 테스트해 주세요.');return auth.apiTransient('/functions/v1/learning-coach',body,signal);}});
+const learningLab=new LearningLabController({snapshot:()=>snapshot,perform:action=>{const retry=!!pending&&!!snapshot&&pending.mode===mode&&pending.familyId===snapshot.familyId&&pending.actorId===snapshot.me.id&&canonical(pending.action)===canonical(action);return retry?doAction(undefined,true):doAction(action);},render,toast,coach});
+function leaveLearning(){learning.leave();learningLab.leave();coach.leave();}
+function learningView():string{if(!snapshot)return '';if(snapshot.me.role==='admin'&&!legacyLearning)return learningLab.render(snapshot);return (snapshot.me.role==='admin'?'<button class="button outline" data-action="learning-v2">← 새 학습 테스트로 돌아가기</button>':'')+learning.render(snapshot);}
 function dialogError(message:string){const el=modal.querySelector<HTMLDivElement>('.dialog-error');if(el)el.textContent=message;else toast(message);}
-function render(){if(!snapshot)return;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learning.render(snapshot):undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}
+function render(){if(!snapshot)return;reconcileGachaVisibility();reconcileLearningVisibility();root.innerHTML=renderApp({snapshot,screen,mode,busy,pending:!!pending,syncError,lastSync,inventoryFilter,rewardQuery,rewardStatus,learningHtml:screen==='learning'?learningView():undefined});document.title=`${snapshot.state.childName}의 칭찬 별나라`;}
 function reconcileLearningVisibility():boolean{
  if(!snapshot)return false;
  const changed=learning.reconcile(snapshot);
- if(screen==='learning'&&!canVisit(snapshot.me.role,'learning',snapshot.state)){learning.leave();screen='home';return true;}
- return changed;
+ const labChanged=learningLab.reconcile(snapshot);
+ if(snapshot.me.role!=='admin')legacyLearning=false;
+ if(screen==='learning'&&!canVisit(snapshot.me.role,'learning',snapshot.state)){leaveLearning();screen='home';return true;}
+ return changed||labChanged;
 }
 function reconcileGachaVisibility():boolean{
  if(!snapshot||snapshot.me.role!=='child'||isGachaEnabled(snapshot.state))return false;
@@ -94,7 +104,7 @@ function confirm(title:string,detail:string,action:FamilyAction,label='확인'){
 async function doAction(action?:FamilyAction,retry=false):Promise<boolean>{
   if(busy||!snapshot)return false;
   if(pending&&!retry){toast('먼저 이전 요청의 결과를 확인해 주세요.');return false;}
-  const operation:Pending=retry&&pending?pending:{mode,familyId:snapshot.familyId,actorId:snapshot.me.id,requestId:crypto.randomUUID(),action:action!};
+  const operation:Pending=retry&&pending?pending:{mode,familyId:snapshot.familyId,actorId:snapshot.me.id,requestId:action?.type==='learning-lab/complete-preview'?action.runId:crypto.randomUUID(),action:action!};
   if(!operation.action)return false;
   try{savePending(operation);}catch(error){toast(`요청을 안전하게 저장하지 못했어요. ${err(error)}`);return false;}
   busy=true;disableControls(true);
@@ -131,7 +141,7 @@ async function refresh(quiet=false){if(busy||refreshing)return;refreshing=true;
   }
   catch(error){syncError=mode==='cloud'?`가족 기록 갱신 실패: ${err(error)}`:err(error);if(!quiet)render();}
   finally{refreshing=false;}}
-async function initialize(){learning.leave();root.innerHTML='<div class="loading"><span>✦</span>우리 가족의 별을 모으고 있어요.</div>';snapshot=null;pending=null;syncError='';
+async function initialize(){leaveLearning();legacyLearning=false;root.innerHTML='<div class="loading"><span>✦</span>우리 가족의 별을 모으고 있어요.</div>';snapshot=null;pending=null;syncError='';
   try {
     if(mode==='cloud'){
       if(!configured){root.innerHTML=cloudLogin(false);return;}
@@ -145,10 +155,11 @@ async function initialize(){learning.leave();root.innerHTML='<div class="loading
 function switchLoginTab(child:boolean){const area=document.querySelector('#login-form-area');if(!area)return;document.querySelectorAll('.login-tabs>button').forEach((b,i)=>b.classList.toggle('active',child?i===1:i===0));area.innerHTML=child?childJoinForm(inviteCode):`<form id="login-form"><label>이메일<input type="email" name="email" autocomplete="username" required></label><label>비밀번호<input type="password" name="password" autocomplete="current-password" minlength="6" required></label><button class="button primary full" type="submit">우리 가족으로 로그인</button><p class="small subtle">성인 계정은 먼저 Supabase 대시보드에서 생성해 주세요.</p></form>`;}
 function setupHelp(){openModal(`<div class="dialog-heading"><span class="eyebrow">FAMILY CONNECTION</span><h2>가족 공유를 연결하려면</h2><p>체험판을 가족 공유로 가장하지 않아요. 실제 서버 연결이 필요해요.</p></div><div class="dialog-help"><p>① 무료 Supabase 프로젝트에 동봉한 데이터베이스 설정과 Edge Function을 적용해요.</p><p>② 보호자 이메일 계정을 만들고 아이용 익명 인증을 켜요.</p><p>③ 공개 URL과 <strong>공개 키</strong>로 웹앱을 배포해요. 서버 비밀 키는 입력하지 않아요.</p><p>④ 보호자로 로그인해 가족을 만들고, 초대 코드를 발급해요.</p><br><p>프로젝트의 <code>docs/technical/DEPLOYMENT.md</code>에 실행 명령과 화면별 설정이 있어요.</p></div><button class="button primary full space-top" data-action="${configured?'use-cloud':'close-modal'}">${configured?'가족 공유 로그인으로 이동':'체험 계속하기'}</button>`);}
 async function adminOperation(run:()=>Promise<void>){if(busy)return;busy=true;disableControls(true);try{await run();}catch(error){if(modal.open)dialogError(err(error));else{const errorBox=document.querySelector('#auth-error');if(errorBox)errorBox.textContent=err(error);else toast(err(error));}}finally{busy=false;disableControls(false);}}
-function navigate(next:Screen,filter?:string){if(busy||!snapshot)return;if(!canVisit(snapshot.me.role,next,snapshot.state)){toast(next==='gacha'?'지금은 뽑기를 이용할 수 없어요.':'이 화면은 보호자만 사용할 수 있어요.');return;}if(!closeModal())return;if(screen==='learning'&&next!=='learning')learning.leave();if(next==='inventory')inventoryFilter=filter??(snapshot.me.role==='admin'?'requested':'all');screen=next;render();window.scrollTo({top:0,behavior:'instant'});}
+function navigate(next:Screen,filter?:string){if(busy||!snapshot)return;if(!canVisit(snapshot.me.role,next,snapshot.state)){toast(next==='gacha'?'지금은 뽑기를 이용할 수 없어요.':'이 화면은 보호자만 사용할 수 있어요.');return;}if(!closeModal())return;if(screen==='learning'&&next!=='learning'){leaveLearning();legacyLearning=false;}if(next==='inventory')inventoryFilter=filter??(snapshot.me.role==='admin'?'requested':'all');screen=next;render();window.scrollTo({top:0,behavior:'instant'});}
 function openRolePicker(){openModal(`<div class="dialog-heading"><span class="eyebrow">DEMO ROLE SWITCH</span><h2>누구의 화면으로 볼까요?</h2><p>체험용 역할 전환이에요. 실제 공유 모드에서는 로그인 권한으로 구분해요.</p></div><div class="role-picker">${(snapshot?.members??DEMO_MEMBERS).map(m=>`<button class="role-button" data-demo-role="${h(m.id)}"><span>${m.role==='child'?'🌟':m.id==='grandma'?'👵':m.id==='dad'?'🧑':'👩'}</span><span><strong>${h(m.name)}</strong><small>${roleName(m.role)}</small></span></button>`).join('')}</div>`);}
 function extractInvite(){try{if(location.hash.startsWith('#join=')){const q=new URLSearchParams(location.hash.slice(1));const code=q.get('join')??'';if(/^[a-f0-9]{64}$/.test(code)){inviteCode=code;inviteRole=q.get('role')??'';sessionStorage.setItem('praise-star.invite',JSON.stringify({code,role:inviteRole}));}history.replaceState(null,'',location.pathname+location.search);}else{const saved=JSON.parse(sessionStorage.getItem('praise-star.invite')??'null');if(saved){inviteCode=saved.code;inviteRole=saved.role;}}}catch{/* A private browser may not allow session persistence. */}}
-async function handleClick(event:MouseEvent){const source=(event.target as Element).closest<HTMLElement>('[data-learning-action],[data-nav],[data-action],[data-demo-role],[data-filter],[data-template]');if(!source||busy)return;
+async function handleClick(event:MouseEvent){const source=(event.target as Element).closest<HTMLElement>('[data-lab-action],[data-learning-action],[data-nav],[data-action],[data-demo-role],[data-filter],[data-template]');if(!source||busy)return;
+ if(source.dataset.labAction){if(screen==='learning'&&!legacyLearning&&snapshot?.me.role==='admin')await learningLab.handleClick(source);return;}
  if(source.dataset.learningAction){if(screen==='learning'&&snapshot&&canVisit(snapshot.me.role,'learning',snapshot.state))await learning.handleClick(source);return;}
  if(source.dataset.nav){navigate(source.dataset.nav as Screen,source.dataset.inventoryStatus);return;}
  if(source.dataset.filter){inventoryFilter=source.dataset.filter;render();return;}
@@ -156,6 +167,8 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
  if(source.dataset.template){const area=document.querySelector<HTMLTextAreaElement>('#praise-reason');if(area){area.value=source.dataset.template;area.dispatchEvent(new Event('input',{bubbles:true}));area.focus();}return;}
  const action=source.dataset.action,id=source.dataset.id;
  switch(action){
+  case 'learning-legacy':if(snapshot?.me.role==='admin'){leaveLearning();legacyLearning=true;render();}break;
+  case 'learning-v2':if(snapshot?.me.role==='admin'){leaveLearning();legacyLearning=false;render();}break;
   case 'open-letter':{const p=snapshot?.state.praises.find(p=>p.id===id);if(p&&snapshot)openModal(letterDetail(p,snapshot.me.role==='child',snapshot.state.readPraiseIds?.includes(p.id)??false));break;}
   case 'read-letter':if(id&&snapshot?.me.role==='child')await doAction({type:'letters/read',ids:[id]});break;
   case 'edit-rule':if(snapshot?.me.role==='admin')openModal(ruleEditor(rulesFor(snapshot.state).find(r=>r.id===id)));break;
@@ -214,6 +227,7 @@ async function handleClick(event:MouseEvent){const source=(event.target as Eleme
 }
 document.addEventListener('click',event=>{handleClick(event).catch(error=>toast(err(error)));});
 document.addEventListener('submit',event=>{const form=event.target as HTMLFormElement;if(!(form instanceof HTMLFormElement))return;event.preventDefault();if(busy)return;
+ if(form.dataset.labForm){if(screen==='learning'&&!legacyLearning&&snapshot?.me.role==='admin')void learningLab.handleSubmit(form).catch(error=>toast(err(error)));return;}
  if(form.dataset.learningForm){if(screen==='learning'&&snapshot&&canVisit(snapshot.me.role,'learning',snapshot.state))void learning.handleSubmit(form).catch(error=>toast(err(error)));return;}
  const data=new FormData(form);const value=(key:string)=>String(data.get(key)??'');const number=(key:string)=>Number(value(key));
  (async()=>{switch(form.id){
