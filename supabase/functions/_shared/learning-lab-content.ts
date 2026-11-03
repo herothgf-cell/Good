@@ -301,12 +301,12 @@ export function normalizeLabAnswer(value:string,format:'integer'|'time'|'date'):
   }
   return '';
 }
-export interface LabAnswer {stepId:string;value?:string;attempts:number;help:LabHelp;observation?:'independent'|'supported'|'retry';evidence?:'self'|'guardian';}
-export interface LabSkillResult {skillId:string;independent:number;supported:number;review:number;observed:number;}
-export interface LabEvaluation {total:number;correct:number;independent:number;supported:number;review:number;observed:number;skills:LabSkillResult[];}
+export interface LabAnswer {practiced?:true;stepId:string;value?:string;attempts:number;help:LabHelp;observation?:'independent'|'supported'|'retry';evidence?:'self'|'guardian';}
+export interface LabSkillResult {practiced?:number;skillId:string;independent:number;supported:number;review:number;observed:number;}
+export interface LabEvaluation {practiced?:number;total:number;correct:number;independent:number;supported:number;review:number;observed:number;skills:LabSkillResult[];}
 export function evaluateLabAnswers(lesson:LabLesson,answers:unknown):LabEvaluation {
   if (!Array.isArray(answers) || answers.length!==lesson.steps.length) throw new Error('각 학습 단계의 기록이 한 번씩 필요해요.');
-  const allowedKeys=new Set(['stepId','value','attempts','help','observation','evidence']);
+  const allowedKeys=new Set(['stepId','value','attempts','help','observation','evidence','practiced']);
   const byId=new Map<string,Record<string,unknown>>();
   for(const value of answers) {
     if (!record(value) || Reflect.ownKeys(value).some(k=>typeof k!=='string' || !allowedKeys.has(k)) || typeof value.stepId!=='string'
@@ -314,6 +314,7 @@ export function evaluateLabAnswers(lesson:LabLesson,answers:unknown):LabEvaluati
       || typeof value.help!=='string' || !['none','replay','hint','model'].includes(value.help) || byId.has(value.stepId)) throw new Error('학습 시도 기록이 올바르지 않아요.');
     if (value.observation!==undefined && (typeof value.observation!=='string' || !['independent','supported','retry'].includes(value.observation))) throw new Error('관찰 기록이 올바르지 않아요.');
     if (value.evidence!==undefined && (typeof value.evidence!=='string' || !['self','guardian'].includes(value.evidence))) throw new Error('관찰 출처가 올바르지 않아요.');
+    if (Object.hasOwn(value,'practiced') && value.practiced!==true) throw new Error('연습 완료 표시를 확인해 주세요.');
     byId.set(value.stepId,value);
   }
   const result:LabEvaluation={total:lesson.steps.length,correct:0,independent:0,supported:0,review:0,observed:0,skills:[]};
@@ -321,11 +322,14 @@ export function evaluateLabAnswers(lesson:LabLesson,answers:unknown):LabEvaluati
   for(const step of lesson.steps) {
     const answer=byId.get(step.id);
     if (!answer) throw new Error('다른 학습 단계의 기록은 저장할 수 없어요.');
-    let outcome:'independent'|'supported'|'review';
+    let outcome:'independent'|'supported'|'review'|'practiced';
     const hasObservation=answer.observation!==undefined;
     const hasEvidence=answer.evidence!==undefined;
     if (hasObservation!==hasEvidence) throw new Error('관찰과 관찰 출처를 함께 기록해 주세요.');
-    if (step.kind==='practice') {
+    if (answer.practiced===true) {
+      if (step.kind!=='practice'||Object.hasOwn(answer,'value')||hasObservation||hasEvidence) throw new Error('연습 완료는 채점이나 관찰과 함께 기록하지 않아요.');
+      outcome='practiced';
+    } else if (step.kind==='practice') {
       if (Object.hasOwn(answer,'value') || !hasObservation || !hasEvidence) throw new Error('말하기·읽기는 답 텍스트 없이 관찰로 기록해 주세요.');
       outcome=answer.observation==='retry'?'review':answer.observation==='supported'||answer.help!=='none'||Number(answer.attempts)>1||step.mode==='model'?'supported':'independent';
     } else {
@@ -345,8 +349,9 @@ export function evaluateLabAnswers(lesson:LabLesson,answers:unknown):LabEvaluati
     }
     let skill=skills.get(step.skillId);
     if (!skill) {skill={skillId:step.skillId,independent:0,supported:0,review:0,observed:0};skills.set(step.skillId,skill);}
-    result[outcome]++;skill[outcome]++;
-    if(step.kind==='practice') {result.observed++;skill.observed++;}
+    if(outcome==='practiced'){result.practiced=(result.practiced??0)+1;skill.practiced=(skill.practiced??0)+1;}
+    else{result[outcome]++;skill[outcome]++;}
+    if(step.kind==='practice'&&outcome!=='practiced') {result.observed++;skill.observed++;}
   }
   result.skills=[...skills.values()];
   return result;
