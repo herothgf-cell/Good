@@ -12,7 +12,7 @@ async function fixture(role='admin'){
  const actions=[],toasts=[];let result=true,leaves=0;
  const coach={view:()=>({phase:'idle',available:null,message:'연결 확인 필요',messages:[],turns:0}),check:async()=>{},startRecording:async()=>{},finishRecording:async()=>{},sendText:async()=>{},leave:()=>leaves++};
  const controller=new LearningLabController({snapshot:()=>snapshot,perform:async a=>{actions.push(structuredClone(a));return result;},render:()=>{},toast:t=>toasts.push(t),coach});
- return {controller,actions,toasts,click:(a,extra={})=>controller.handleClick({dataset:{labAction:a,...extra}}),get snapshot(){return snapshot},set snapshot(v){snapshot=v},set result(v){result=v},get leaves(){return leaves}};
+ return {controller,actions,toasts,click:(a,extra={})=>controller.handleClick({dataset:{labAction:a,...(a==='practice-next'?{stepId:controller.render(snapshot).match(/data-step-id="([^"]+)"/)?.[1]}:{}),...extra}}),get snapshot(){return snapshot},set snapshot(v){snapshot=v},set result(v){result=v},get leaves(){return leaves}};
 }
 
 test('lab home offers eight substantive guardian activities and no child/giver UI',async()=>{
@@ -35,7 +35,7 @@ test('recall hides target, help is recorded, ordinary polls preserve session, ro
  for(let i=0;i<10;i++){
   const html=f.controller.render(f.snapshot);
   if(html.includes('data-practice-mode="recall"')){found=true;assert.match(html,/답을 떠올려/);assert.doesNotMatch(html,/class="lab-target"/);await f.click('model');assert.match(f.controller.render(f.snapshot),/class="lab-target"/);break;}
-  await f.click('observe',{observation:'independent'});await f.click('next');
+  await f.click('practice-next');
  }
  assert.ok(found);assert.equal(f.controller.reconcile({...f.snapshot,revision:2}),false);assert.match(f.controller.render(f.snapshot),/data-practice-mode="recall"/);
  f.snapshot={...f.snapshot,me:{id:'child',name:'아이',role:'child'}};assert.equal(f.controller.reconcile(f.snapshot),true);assert.equal(f.controller.render(f.snapshot),'');assert.ok(f.leaves>0);
@@ -56,14 +56,14 @@ test('question visuals never disclose unknown end time or calendar target before
  await f.click('back');await f.click('start',{lessonId:'math-calendar'});html=f.controller.render(f.snapshot);assert.doesNotMatch(html,/class="[^"]*lab-day-target/);await f.click('model');assert.match(f.controller.render(f.snapshot),/class="[^"]*lab-day-target/);
 });
 test('independent reading presents text without first playing or revealing a model',async()=>{
- const f=await fixture();await f.click('start',{lessonId:'english-reading'});await f.click('observe',{observation:'supported'});await f.click('next');const html=f.controller.render(f.snapshot);assert.match(html,/data-practice-mode="read"/);assert.match(html,/class="lab-target"/);assert.doesNotMatch(html,/함께 보는 답/);
+ const f=await fixture();await f.click('start',{lessonId:'english-reading'});await f.click('practice-next');const html=f.controller.render(f.snapshot);assert.match(html,/data-practice-mode="read"/);assert.match(html,/class="lab-target"/);assert.doesNotMatch(html,/함께 보는 답/);
 });
-test('listening to a phonics reading model records support rather than independent reading',async()=>{
- const f=await fixture();await f.click('start',{lessonId:'english-phonics'});await f.click('observe',{observation:'supported'});await f.click('next');await f.click('listen');await f.click('observe',{observation:'independent'});await f.click('next');
+test('listening records help on an ungraded practice step, not successful reading',async()=>{
+ const f=await fixture();await f.click('start',{lessonId:'english-phonics'});await f.click('practice-next');await f.click('listen');await f.click('practice-next');
  for(let i=0;i<15&&!f.controller.render(f.snapshot).includes('lab-summary');i++){
-  const html=f.controller.render(f.snapshot);if(html.includes('data-practice-mode='))await f.click('observe',{observation:'independent'});else{await f.click('model');await f.click('review');}await f.click('next');
+  const html=f.controller.render(f.snapshot);if(html.includes('data-practice-mode='))await f.click('practice-next');else{await f.click('model');await f.click('review');await f.click('next');}
  }
- assert.equal(f.actions[0].answers[1].help,'model');assert.equal(f.actions[0].answers[1].observation,'supported');f.controller.leave();
+ assert.equal(f.actions[0].answers[1].help,'model');assert.equal(f.actions[0].answers[1].practiced,true);assert.equal(f.actions[0].answers[1].observation,undefined);f.controller.leave();
 });
 test('100 won transfer shows exact coins and counts pieces rather than banknotes',async()=>{
  const {renderLabVisual}=await import('../dist/src/learning-lab-visuals.js');const html=renderLabVisual({kind:'money',unit:100,counts:[2,3]});assert.equal((html.match(/class="lab-coin"/g)||[]).length,5);assert.match(html,/100원 2개, 100원 3개/);assert.doesNotMatch(html,/lab-bill|장/);
