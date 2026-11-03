@@ -9,7 +9,7 @@ console.log(`Building ${mode} mode.`);
 rmSync('dist',{recursive:true,force:true});
 execFileSync(process.platform==='win32'?'tsc.cmd':'tsc',['-p','tsconfig.json'],{stdio:'inherit',shell:process.platform==='win32'});
 cpSync('public','dist',{recursive:true});
-const styles=['src/styles.css','src/experience.css','src/learning.css','src/learning-lab.css','src/learning-realtime.css'].map(file=>readFileSync(file,'utf8')).join('\n');
+const styles=['src/styles.css','src/experience.css','src/learning.css','src/learning-lab.css','src/learning-realtime.css','src/learning-mobile.css'].map(file=>readFileSync(file,'utf8')).join('\n');
 writeFileSync('dist/styles.css',styles);
 writeFileSync('dist/config.js',`window.PRAISE_CONFIG = ${JSON.stringify(config)};\n`);
 execFileSync(process.platform==='win32'?'tsc.cmd':'tsc',['-p','tsconfig.json','--module','CommonJS','--moduleResolution','Node','--outDir','.bundle'],{stdio:'inherit',shell:process.platform==='win32'});
