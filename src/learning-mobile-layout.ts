@@ -33,7 +33,8 @@ export class LearningMobileLayout {
     const nav=document.querySelector<HTMLElement>('.mobile-nav');
     const navHeight=mobile&&!keyboard&&nav&&getComputedStyle(nav).display!=='none'?nav.getBoundingClientRect().height:0;
     runner.style.setProperty('--chat-viewport-top',`${top}px`);
-    runner.style.setProperty('--chat-viewport-height',`${Math.max(160,height-navHeight)}px`);
+    const pageOffset=mobile?0:Math.max(0,runner.getBoundingClientRect().top-top)+12;
+    runner.style.setProperty('--chat-viewport-height',`${Math.max(160,height-navHeight-pageOffset)}px`);
   }
   leave():void {
     if(typeof document==='undefined')return;
