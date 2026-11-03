@@ -1,0 +1,22 @@
+name: Export learning development baseline
+on:
+  push:
+    branches: [work/learning-hub-20261103]
+    paths: [.github/workflows/learning-source-export.yml]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Archive tracked application sources only
+        run: git archive --format=tar --output=learning-baseline.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: learning-development-baseline
+          path: learning-baseline.tar
+          retention-days: 1
