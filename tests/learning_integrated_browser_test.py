@@ -57,19 +57,18 @@ def main():
             page.evaluate('fx.finishAudio()');action('back').click();page.locator('[data-lesson-id="english-phonics"]').click()
             expect(page.locator('.lab-target')).to_have_text('fat');expect(page.locator('.lab-listen')).to_contain_text('AI가 생성한')
             page.evaluate('fx.finishAudio()');calls=page.evaluate('fx.calls.length');action('reader-replay').click();assert page.evaluate('fx.calls.length')==calls
-            page.evaluate('fx.finishAudio()');action('observe').filter(has_text='도움받았어요').click();action('next').click()
+            page.evaluate('fx.finishAudio()');action('practice-next').click()
             assert page.evaluate('fx.calls.length')==calls,'independent read must not auto-play model'
-            action('observe').filter(has_text='스스로').click();action('next').click()
+            action('practice-next').click()
             for letter in 'fat':page.locator(f'[data-letter="{letter}"]').click()
             expect(page.locator('#lab-answer')).to_have_value('fat');page.screenshot(path=str(out/f'integrated-phonics-writing-{width}.png'),full_page=True)
             page.locator('#lab-answer').press('Enter');action('next').click();expect(page.locator('.lab-target')).to_have_text('jam')
-            # Finish the remaining stages with honest observations/review markers.
+            # Finish the remaining stages with ungraded practice and explicit review markers.
             for _ in range(12):
                 if page.locator('.lab-summary').count():break
                 page.evaluate('fx.finishAudio()')
-                if page.locator('[data-practice-mode]').count():action('observe').filter(has_text='도움받았어요').click()
-                else:action('model').click();action('review').click()
-                action('next').click()
+                if page.locator('[data-practice-mode]').count():action('practice-next').click()
+                else:action('model').click();action('review').click();action('next').click()
             expect(page.locator('.lab-save-status')).to_contain_text('저장했어요')
             assert page.evaluate('fx.snapshot().state.balance')==0
             assert all('ink' not in json.dumps(a) and 'base64' not in json.dumps(a) for a in page.evaluate('fx.actions'))

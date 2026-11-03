@@ -8,7 +8,7 @@ export interface LabRun extends LabEvaluation {
   /** Exact comparison key of bounded quiz metadata; never audio, chat or practice text. */
   completionKey?:string;
 }
-export interface LabProgress extends LabSkillResult {lastSeen:string;lastOutcome:'independent'|'supported'|'review';}
+export interface LabProgress extends LabSkillResult {lastSeen:string;lastOutcome:'independent'|'supported'|'review'|'practiced';}
 export interface LabVoiceUsage {day:string;turns:number;sessions:Record<string,{actorId:string;turns:number;startedAt:string}>;}
 export interface LearningLabState {settings:LabSettings;settingsVersion:number;previews:LabRun[];previewProgress:Record<string,LabProgress>;voiceUsage?:LabVoiceUsage;speechUsage?:{day:string;requests:number};}
 export type LearningLabAction =
@@ -45,7 +45,7 @@ function completionKey(action:Extract<LearningLabAction,{type:'learning-lab/comp
   if(!Array.isArray(action.answers)||action.answers.length!==lesson.steps.length)fail('INVALID_INPUT','활동의 모든 답을 확인해 주세요.');
   const seen=new Set<string>();
   const tuples=action.answers.map(answer=>{
-    if(!answer||typeof answer!=='object'||Array.isArray(answer)||Object.keys(answer).some(key=>!['stepId','value','attempts','help','observation','evidence'].includes(key)))
+    if(!answer||typeof answer!=='object'||Array.isArray(answer)||Object.keys(answer).some(key=>!['stepId','value','attempts','help','observation','evidence','practiced'].includes(key)))
       fail('INVALID_INPUT','학습 답의 항목을 확인해 주세요.');
     if(typeof answer.stepId!=='string'||seen.has(answer.stepId))fail('INVALID_INPUT','학습 단계가 중복되었어요.');
     seen.add(answer.stepId);
@@ -55,8 +55,11 @@ function completionKey(action:Extract<LearningLabAction,{type:'learning-lab/comp
     if(!['none','replay','hint','model'].includes(answer.help))fail('INVALID_INPUT','도움 기록을 확인해 주세요.');
     if(answer.observation!==undefined&&!['independent','supported','retry'].includes(answer.observation))fail('INVALID_INPUT','관찰 기록을 확인해 주세요.');
     if(answer.evidence!==undefined&&!['self','guardian'].includes(answer.evidence))fail('INVALID_INPUT','관찰 주체를 확인해 주세요.');
+    if(Object.prototype.hasOwnProperty.call(answer,'practiced')&&answer.practiced!==true)fail('INVALID_INPUT','연습 완료 표시를 확인해 주세요.');
     let value:string|null=null;
-    if(step.kind==='practice'){
+    if(answer.practiced===true){
+      if(step.kind!=='practice'||Object.prototype.hasOwnProperty.call(answer,'value')||answer.observation!==undefined||answer.evidence!==undefined)fail('INVALID_INPUT','연습 완료는 정답이나 관찰로 기록하지 않아요.');
+    }else if(step.kind==='practice'){
       if(Object.prototype.hasOwnProperty.call(answer,'value')||!answer.observation||!answer.evidence)fail('INVALID_INPUT','말하기·읽기는 보호자 또는 자기 관찰로 기록해 주세요.');
     }else if(!Object.prototype.hasOwnProperty.call(answer,'value')){
       if(answer.observation!=='retry'||!answer.evidence||!['hint','model'].includes(answer.help))
@@ -73,7 +76,8 @@ function completionKey(action:Extract<LearningLabAction,{type:'learning-lab/comp
         if(!value)fail('INVALID_INPUT','숫자·시각·날짜 형식으로 입력해 주세요.');
       }
     }
-    return [answer.stepId,value,answer.attempts,answer.help,answer.observation??null,answer.evidence??null];
+    const tuple=[answer.stepId,value,answer.attempts,answer.help,answer.observation??null,answer.evidence??null];
+    return answer.practiced===true?[...tuple,'practiced']:tuple;
   }).sort((a,b)=>String(a[0]).localeCompare(String(b[0])));
   const key=JSON.stringify([actorId,action.lessonId,action.contentVersion,action.settingsVersion,settingsKey(settings),action.seed,tuples]);
   if(key.length>6000)fail('INVALID_INPUT','학습 기록의 크기를 확인해 주세요.');
@@ -88,8 +92,9 @@ function aggregate(learning:LearningLabState,evaluation:LabEvaluation,now:string
     if(!previous&&Object.keys(progress).length>=400)fail('LIMIT','학습 진도 항목 한도에 도달했어요.');
     const totals={skillId:skill.skillId,independent:skill.independent+(previous?.independent??0),supported:skill.supported+(previous?.supported??0),
       review:skill.review+(previous?.review??0),observed:skill.observed+(previous?.observed??0)};
-    if([totals.independent,totals.supported,totals.review,totals.observed].some(value=>!Number.isSafeInteger(value)||value<0))fail('LIMIT','학습 진도 집계 한도에 도달했어요.');
-    progress[skill.skillId]={...totals,lastSeen:now,lastOutcome:skill.review>0?'review':skill.supported>0?'supported':'independent'};
+    const practiced=(skill.practiced??0)+(previous?.practiced??0);
+    if([practiced,totals.independent,totals.supported,totals.review,totals.observed].some(value=>!Number.isSafeInteger(value)||value<0))fail('LIMIT','학습 진도 집계 한도에 도달했어요.');
+    progress[skill.skillId]={...totals,...(practiced?{practiced}:{}),lastSeen:now,lastOutcome:skill.review>0?'review':skill.supported>0?'supported':skill.independent>0?'independent':'practiced'};
   }
 }
 

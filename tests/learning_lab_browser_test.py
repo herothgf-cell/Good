@@ -106,9 +106,9 @@ def main():
         # Demo intentionally cannot spend API credit; no device-voice or caregiver fallback.
         expect(tab.locator('.lab-listen')).to_contain_text('가족 공유')
         assert len(tab.evaluate('window.__speech.spoken'))==0
-        action(tab,'observe').filter(has_text='도움받았어요').click();action(tab,'next').click()
+        action(tab,'practice-next').click()
         expect(tab.locator('[data-practice-mode="read"]')).to_be_visible()
-        action(tab,'observe').filter(has_text='스스로').click();action(tab,'next').click()
+        action(tab,'practice-next').click()
         expect(tab.locator('[data-writing-pad]')).to_be_visible()
         for letter in 'fat':tab.locator(f'[data-letter="{letter}"]').click()
         expect(tab.locator('#lab-answer')).to_have_value('fat')
@@ -118,7 +118,7 @@ def main():
         tab.locator('#lab-answer').press('Enter');expect(action(tab,'next')).to_be_visible();action(tab,'next').click()
         expect(tab.locator('.lab-target')).to_have_text('jam')
         # Second word: model, read, write then recall from meaning.
-        for _ in range(2):action(tab,'observe').filter(has_text='도움받았어요').click();action(tab,'next').click()
+        for _ in range(2):action(tab,'practice-next').click()
         tab.locator('#lab-answer').fill('jam');tab.locator('#lab-answer').press('Enter');action(tab,'next').click()
         expect(tab.locator('[data-practice-mode="recall"]')).to_be_visible();expect(tab.locator('.lab-target')).to_have_count(0)
         action(tab,'model').click();expect(tab.locator('.lab-target')).to_have_text('fat')
@@ -135,7 +135,7 @@ def main():
         expect(action(tab,'coach-record')).to_be_disabled();tab.locator('#lab-coach-message').fill('Adult test message');action(tab,'coach-check').click();expect(tab.locator('#lab-coach-message')).to_have_value('Adult test message');expect(tab.locator('.lab-coach-status')).to_contain_text(re.compile('체험|설정|연결'))
         assert tab.evaluate('window.__microphoneRequests')==0
         passed('clocks and stale session recovery remain intact; chat and audio share one screen with no separate realtime panel')
-        role(tab,'child');expect(tab.locator('.lab-page')).to_have_count(0);expect(tab.locator('[data-nav="learning"]')).to_have_count(0)
+        action(tab,'back').click();role(tab,'child');expect(tab.locator('.lab-page')).to_have_count(0);expect(tab.locator('[data-nav="learning"]')).to_have_count(0)
         role(tab,'grandma');expect(tab.locator('.lab-page')).to_have_count(0)
         passed('child and giver have no lab UI or navigation')
         ipad=page(1024);overflow(ipad);ipad.screenshot(path=str(out/'learning-v2-home-1024.png'),full_page=True)

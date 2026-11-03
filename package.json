@@ -10,7 +10,7 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "dev": "npm run build && node scripts/serve.mjs",
     "preview": "node scripts/serve.mjs",
-    "test:browser": "python tests/experience_browser_test.py && python tests/time_coupons_browser_test.py && python tests/learning_browser_test.py && python tests/learning_lab_browser_test.py && python tests/learning_coach_browser_test.py && python tests/learning_realtime_browser_test.py && python tests/learning_integrated_browser_test.py && python tests/letters_rules_browser_test.py",
+    "test:browser": "python tests/experience_browser_test.py && python tests/time_coupons_browser_test.py && python tests/learning_browser_test.py && python tests/learning_lab_browser_test.py && python tests/learning_coach_browser_test.py && python tests/learning_realtime_browser_test.py && python tests/learning_integrated_browser_test.py && python tests/letters_rules_browser_test.py && python tests/mobile_learning_browser_test.py",
     "check:deploy": "node scripts/deployment.mjs",
     "test:db": "python3 tests/db_test.py"
   },
